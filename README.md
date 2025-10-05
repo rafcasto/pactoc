@@ -22,10 +22,17 @@ This is a clean, dietary recipe system that allows nutritionists to create invit
 
 ```
 pactoc/
+├── .gitignore                   # Comprehensive git ignore rules
 ├── README_SISTEMA_RECETAS.md    # Main documentation
 ├── CLEANUP_PLAN.md              # Cleanup documentation
 ├── start_dev.sh                 # Main startup script
 ├── backend/                     # Python Flask Backend
+│   ├── .env.example            # Environment variables template
+│   ├── scripts/                # Utility and migration scripts
+│   │   ├── README.md           # Scripts documentation
+│   │   ├── migrate_*.py        # Database migration scripts
+│   │   ├── *_fix.py           # Utility fix scripts
+│   │   └── validate_*.py      # Validation scripts
 │   ├── app/                     # Main Flask application
 │   │   ├── __init__.py         # Application factory
 │   │   ├── config.py           # Configuration
