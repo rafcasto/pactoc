@@ -37,5 +37,11 @@ def main():
 # For Vercel deployment
 app = create_app('production' if os.environ.get('VERCEL') else 'development')
 
-if __name__ == '__main__':
-    main()
+# Vercel needs this at module level
+if os.environ.get('VERCEL'):
+    # Production handler for Vercel
+    pass
+else:
+    # Development mode
+    if __name__ == '__main__':
+        main()

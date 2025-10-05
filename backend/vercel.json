@@ -11,6 +11,15 @@
         "src": "/(.*)",
         "dest": "run_diet_server.py"
       }
-    ]
+    ],
+    "env": {
+      "FLASK_ENV": "production",
+      "VERCEL": "1"
+    },
+    "functions": {
+      "run_diet_server.py": {
+        "maxDuration": 30
+      }
+    }
   }
   

@@ -29,11 +29,20 @@ def create_app(config_name=None):
     
     # Initialize Firebase (only for authentication)
     with app.app_context():
-        FirebaseService.initialize()
+        try:
+            FirebaseService.initialize()
+        except Exception as e:
+            app.logger.warning(f"Firebase initialization failed: {e}")
     
     # Initialize PostgreSQL database
     with app.app_context():
-        init_db(app)
+        try:
+            init_db(app)
+        except Exception as e:
+            app.logger.error(f"Database initialization failed: {e}")
+            # In production, we might want to continue without DB for health checks
+            if not os.getenv('VERCEL'):
+                raise
     
     # Register blueprints
     app.register_blueprint(health_bp)
