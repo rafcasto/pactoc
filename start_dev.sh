@@ -33,6 +33,17 @@ pkill -f "python.*server" 2>/dev/null
 pkill -f "next dev" 2>/dev/null
 sleep 2
 
+# Validar enums antes de iniciar
+echo "🔍 Validando configuración de base de datos..."
+cd backend
+if ./venv/bin/python quick_enum_fix.py > /dev/null 2>&1; then
+    echo "✅ Base de datos validada"
+else
+    echo "⚠️  Ejecutando corrección automática de enums..."
+    ./venv/bin/python quick_enum_fix.py
+fi
+cd ..
+
 echo "🔧 Iniciando Backend del Sistema de Recetas (Puerto 8000)..."
 cd backend
 python3.11 run_diet_server.py > server.log 2>&1 &

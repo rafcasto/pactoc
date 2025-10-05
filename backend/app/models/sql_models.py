@@ -86,6 +86,11 @@ class Patient(BaseModel):
     meal_plans = relationship("MealPlan", back_populates="patient", cascade="all, delete-orphan")
     
     def to_dict(self, include_relations=False):
+        # Normalize truncated enum values
+        profile_status = self.profile_status
+        if profile_status == 'pending_rev':
+            profile_status = 'pending_review'
+        
         data = {
             'id': self.id,
             'invitation_id': self.invitation_id,
@@ -95,7 +100,7 @@ class Patient(BaseModel):
             'gender': self.gender,
             'email': self.email,
             'phone': self.phone,
-            'profile_status': self.profile_status,
+            'profile_status': profile_status,
             'additional_notes': self.additional_notes,
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat(),

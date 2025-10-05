@@ -11,6 +11,7 @@ from .routes.invitations_sql import invitations_bp
 from .routes.patients_sql import patients_bp
 from .routes.catalogs_sql import catalogs_bp
 from .routes.meal_plans import meal_plans_bp
+from .routes.meal_plan_workflow import workflow_bp
 from .utils.responses import error_response
 import logging
 import os
@@ -44,6 +45,7 @@ def create_app(config_name=None):
     app.register_blueprint(patients_bp)
     app.register_blueprint(catalogs_bp)
     app.register_blueprint(meal_plans_bp)
+    app.register_blueprint(workflow_bp)
     
     # Register public routes (no authentication required)
     from .routes.public import public_bp

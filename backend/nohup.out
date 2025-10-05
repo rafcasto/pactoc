@@ -1,0 +1,15 @@
+🚀 Iniciando servidor de desarrollo...
+📡 Sistema de recetas dietéticas disponible en:
+   Backend API: http://localhost:8000
+   Endpoints públicos: http://localhost:8000/api/public/
+
+📋 Para probar el sistema:
+   1. Crear una invitación desde el panel admin
+   2. Usar el token en: /complete-profile/{token}
+   3. Ver el plan en: /my-meal-plan/{meal_plan_token}
+
+🛑 Presiona Ctrl+C para detener el servidor
+ * Serving Flask app 'app'
+ * Debug mode: on
+Address already in use
+Port 8000 is in use by another program. Either identify and stop that program, or start the server with a different port.

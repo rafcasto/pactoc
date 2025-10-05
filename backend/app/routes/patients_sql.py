@@ -22,13 +22,21 @@ def get_patients():
     try:
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 20, type=int), 100)
-        status = request.args.get('status')
+        status = request.args.get('status') or request.args.get('profile_status')  # Support both parameter names
         search = request.args.get('search')
         
         query = Patient.query
         
         if status:
-            query = query.filter(Patient.profile_status == status)
+            # Handle potential truncated enum values in database
+            if status == 'pending_review':
+                # Try both the full and truncated versions for backwards compatibility
+                query = query.filter(
+                    (Patient.profile_status == 'pending_review') | 
+                    (Patient.profile_status == 'pending_rev')
+                )
+            else:
+                query = query.filter(Patient.profile_status == status)
         
         if search:
             search_filter = f"%{search}%"
@@ -136,7 +144,17 @@ def update_patient(patient_id):
         allowed_fields = ['first_name', 'last_name', 'email', 'phone', 'profile_status', 'additional_notes', 'is_active']
         for field in allowed_fields:
             if field in data:
-                setattr(patient, field, data[field])
+                value = data[field]
+                # Handle truncated enum mapping for profile_status
+                if field == 'profile_status' and value == 'pending_review':
+                    # Try to use full value, but database might have truncated version
+                    try:
+                        setattr(patient, field, value)
+                    except:
+                        # Fallback to truncated version if full version fails
+                        setattr(patient, field, 'pending_rev')
+                else:
+                    setattr(patient, field, value)
         
         # Handle date_of_birth separately
         if 'date_of_birth' in data:
