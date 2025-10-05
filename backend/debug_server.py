@@ -1,100 +1,71 @@
-#!/usr/bin/env python3
 """
-Debug version of the server to identify deployment issues.
+Minimal debug server for Vercel deployment troubleshooting.
 """
-import os
-import sys
-import traceback
-from flask import Flask, jsonify
 
-def create_debug_app():
-    """Create a minimal Flask app for debugging."""
-    app = Flask(__name__)
+def app(environ, start_response):
+    """WSGI application for basic debugging."""
+    import json
+    import os
     
-    @app.route('/')
-    def health_check():
-        return jsonify({
+    # Basic health check
+    if environ['PATH_INFO'] == '/':
+        response_body = json.dumps({
             'status': 'ok',
-            'message': 'Debug server is running',
-            'python_version': sys.version,
-            'environment': 'production' if os.environ.get('VERCEL') else 'development'
+            'message': 'Minimal debug server running',
+            'vercel': os.environ.get('VERCEL', 'Not set'),
+            'python_executable': os.environ.get('PYTHON_EXECUTABLE', 'Not available')
         })
+        status = '200 OK'
+        headers = [('Content-Type', 'application/json')]
+        start_response(status, headers)
+        return [response_body.encode('utf-8')]
     
-    @app.route('/debug/env')
-    def debug_env():
-        """Debug endpoint to check environment variables."""
-        env_vars = {}
-        required_vars = [
-            'DATABASE_URL',
-            'SECRET_KEY', 
-            'FIREBASE_SERVICE_ACCOUNT_BASE64',
-            'VERCEL',
-            'FLASK_ENV'
-        ]
+    # Environment check
+    elif environ['PATH_INFO'] == '/env':
+        env_check = {}
+        required_vars = ['DATABASE_URL', 'SECRET_KEY', 'FIREBASE_SERVICE_ACCOUNT_BASE64']
         
         for var in required_vars:
-            value = os.environ.get(var)
-            env_vars[var] = 'SET' if value else 'NOT_SET'
-            
-        return jsonify({
-            'environment_variables': env_vars,
-            'total_env_vars': len(os.environ),
-            'python_path': sys.path[:3]  # First 3 entries
+            env_check[var] = 'SET' if os.environ.get(var) else 'NOT_SET'
+        
+        response_body = json.dumps({
+            'environment_variables': env_check,
+            'total_env_count': len(os.environ)
         })
+        status = '200 OK'
+        headers = [('Content-Type', 'application/json')]
+        start_response(status, headers)
+        return [response_body.encode('utf-8')]
     
-    @app.route('/debug/import-test')
-    def test_imports():
-        """Test if we can import required modules."""
-        results = {}
-        
-        modules_to_test = [
-            'flask',
-            'flask_cors',
-            'firebase_admin',
-            'psycopg2',
-            'flask_sqlalchemy',
-            'dotenv'
-        ]
-        
-        for module in modules_to_test:
-            try:
-                __import__(module)
-                results[module] = 'OK'
-            except ImportError as e:
-                results[module] = f'FAILED: {str(e)}'
-            except Exception as e:
-                results[module] = f'ERROR: {str(e)}'
-        
-        return jsonify({
-            'import_results': results
-        })
-    
-    @app.route('/debug/full-error')
-    def test_full_app():
-        """Try to import the full app and see what fails."""
+    # Flask import test
+    elif environ['PATH_INFO'] == '/flask-test':
         try:
-            # Add the backend directory to the Python path
-            backend_dir = os.path.dirname(os.path.abspath(__file__))
-            sys.path.insert(0, backend_dir)
+            from flask import Flask
+            test_app = Flask(__name__)
             
-            from app import create_app
-            test_app = create_app('production' if os.environ.get('VERCEL') else 'development')
-            
-            return jsonify({
-                'status': 'success',
-                'message': 'Full app import successful'
+            response_body = json.dumps({
+                'flask_import': 'SUCCESS',
+                'flask_version': getattr(Flask, '__version__', 'Unknown')
             })
+            status = '200 OK'
         except Exception as e:
-            return jsonify({
-                'status': 'error',
-                'error': str(e),
-                'traceback': traceback.format_exc()
-            }), 500
+            response_body = json.dumps({
+                'flask_import': 'FAILED',
+                'error': str(e)
+            })
+            status = '500 Internal Server Error'
+        
+        headers = [('Content-Type', 'application/json')]
+        start_response(status, headers)
+        return [response_body.encode('utf-8')]
     
-    return app
-
-# For Vercel deployment
-app = create_debug_app()
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    # 404 for other paths
+    else:
+        response_body = json.dumps({
+            'error': 'Not found',
+            'available_endpoints': ['/', '/env', '/flask-test']
+        })
+        status = '404 Not Found'
+        headers = [('Content-Type', 'application/json')]
+        start_response(status, headers)
+        return [response_body.encode('utf-8')]
