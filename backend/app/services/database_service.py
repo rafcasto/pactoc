@@ -13,8 +13,11 @@ migrate = Migrate()
 
 def init_db(app):
     """Initialize database with Flask app."""
-    # Database configuration
-    database_url = os.environ.get('DATABASE_URL', 'sqlite:///pactoc_dev.db')
+    # Database configuration - PostgreSQL required
+    database_url = os.environ.get('DATABASE_URL')
+    
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is required. Please set it to your PostgreSQL connection string.")
     
     # Fix for PostgreSQL URL format (some providers use postgres:// instead of postgresql://)
     if database_url.startswith('postgres://'):

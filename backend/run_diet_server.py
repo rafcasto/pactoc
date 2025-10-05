@@ -11,7 +11,7 @@ sys.path.insert(0, backend_dir)
 
 # Set environment variables
 os.environ.setdefault('FLASK_ENV', 'development')
-os.environ.setdefault('DATABASE_URL', 'sqlite:///pactoc_dev.db')
+# DATABASE_URL must be set in .env file - no fallback to ensure PostgreSQL is always used
 
 from app import create_app
 
