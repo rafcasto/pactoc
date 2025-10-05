@@ -9,7 +9,7 @@ import { DashboardStats } from '@/components/dashboard/DashboardStats';
 import { QuickActions } from '@/components/dashboard/QuickActions';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
 import { PriorityQueue } from '@/components/dashboard/PriorityQueue';
-import { useDashboard } from '@/lib/hooks/useDashboard';
+import { useDashboard } from '@/lib/hooks';
 import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
