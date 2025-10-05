@@ -9,8 +9,8 @@ import {GA_TRACKING_ID} from '../lib/utils/analytics'
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Firebase Auth App',
-  description: 'Next.js app with Firebase authentication and reCAPTCHA',
+  title: 'PactoC - Meal Planning & Recipe Management',
+  description: 'Professional meal planning and recipe management system for nutritionists and dietitians',
 };
 
 export default function RootLayout({

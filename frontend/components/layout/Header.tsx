@@ -23,8 +23,9 @@ export function Header() {
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">
             <h1 className="text-xl font-semibold text-gray-900">
-              Firebase App
+              PactoC
             </h1>
+            <span className="ml-2 text-sm text-gray-500">Meal Planning System</span>
           </div>
 
           {user && (

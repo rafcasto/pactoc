@@ -1,34 +1,35 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { AuthenticatedLayout } from '@/components/layout/AuthenticatedLayout';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Modal, ModalFooter } from '@/components/ui/Modal';
+import { Card } from '@/components/ui/Card';
 import { DataTable } from '@/components/ui/DataTable';
-import { useInvitations, useCreateInvitation, useResendInvitation, useRegenerateInvitation, useCancelInvitation, type Invitation } from '@/lib/hooks/useInvitations';
-import { Plus, Mail, Clock, CheckCircle, XCircle, Copy, RefreshCw, Trash2, AlertCircle, RotateCw } from 'lucide-react';
+import { Modal, ModalFooter } from '@/components/ui/Modal';
+import { Input } from '@/components/ui/Input';
+import { useInvitations, useInvitationStats, useCreateInvitation, useResendInvitation, useCancelInvitation, type Invitation } from '@/lib/hooks/useInvitations';
+import { Copy, Mail, Plus, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
 
-export default function DashboardPage() {
-  // Invitation states
+export default function InvitationsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
-  
-  // Invitation hooks
-  const { data: invitationsData, loading: invitationsLoading, error, refetch: refetchInvitations } = useInvitations(selectedStatus);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+
+  // Hooks
+  const { data: invitationsData, loading, error, refetch } = useInvitations(selectedStatus);
+  const { data: statsData } = useInvitationStats();
   const { createInvitation, loading: creating } = useCreateInvitation();
   const { resendInvitation, loading: resending } = useResendInvitation();
-  const { regenerateInvitation, loading: regenerating } = useRegenerateInvitation();
   const { cancelInvitation, loading: canceling } = useCancelInvitation();
 
-  // Invitation handlers
+  const invitations = invitationsData?.invitations || [];
+  const stats = statsData?.stats;
+
   const handleCreateInvitation = async (data: { email: string; first_name?: string; last_name?: string }) => {
     try {
       await createInvitation(data);
       setShowCreateModal(false);
-      refetchInvitations();
+      refetch();
     } catch (error) {
       console.error('Failed to create invitation:', error);
     }
@@ -37,20 +38,9 @@ export default function DashboardPage() {
   const handleResendInvitation = async (invitationId: string) => {
     try {
       await resendInvitation(invitationId);
-      refetchInvitations();
+      refetch();
     } catch (error) {
       console.error('Failed to resend invitation:', error);
-    }
-  };
-
-  const handleRegenerateInvitation = async (invitationId: string) => {
-    if (confirm('Are you sure you want to regenerate this invitation link? The old link will no longer work.')) {
-      try {
-        await regenerateInvitation(invitationId);
-        refetchInvitations();
-      } catch (error) {
-        console.error('Failed to regenerate invitation:', error);
-      }
     }
   };
 
@@ -58,7 +48,7 @@ export default function DashboardPage() {
     if (confirm('Are you sure you want to cancel this invitation?')) {
       try {
         await cancelInvitation(invitationId);
-        refetchInvitations();
+        refetch();
       } catch (error) {
         console.error('Failed to cancel invitation:', error);
       }
@@ -88,8 +78,6 @@ export default function DashboardPage() {
         return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>{status}</span>;
     }
   };
-
-  const invitations = invitationsData?.invitations || [];
 
   const columns = [
     {
@@ -148,23 +136,9 @@ export default function DashboardPage() {
                 handleResendInvitation(record.id);
               }}
               loading={resending}
-              title="Resend invitation (extend expiry)"
+              title="Resend invitation"
             >
               <RefreshCw className="w-4 h-4" />
-            </Button>
-          )}
-          {record.status === 'pending' && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRegenerateInvitation(record.id);
-              }}
-              loading={regenerating}
-              title="Regenerate invitation link"
-            >
-              <RotateCw className="w-4 h-4" />
             </Button>
           )}
           {record.status === 'pending' && (
@@ -188,16 +162,14 @@ export default function DashboardPage() {
 
   if (error) {
     return (
-      <AuthenticatedLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Error loading invitations</h3>
-            <p className="text-gray-500 mb-4">{error}</p>
-            <Button onClick={refetchInvitations}>Try Again</Button>
-          </div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Error loading invitations</h3>
+          <p className="text-gray-500 mb-4">{error}</p>
+          <Button onClick={refetch}>Try Again</Button>
         </div>
-      </AuthenticatedLayout>
+      </div>
     );
   }
 
@@ -206,100 +178,73 @@ export default function DashboardPage() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <p className="mt-1 text-sm text-gray-500">Patient invitations and system overview</p>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Patient Invitations</h1>
           <Button onClick={() => setShowCreateModal(true)}>
             <Plus className="w-4 h-4 mr-2" />
             New Invitation
           </Button>
         </div>
 
-        {/* Stats Cards */}
+      {/* Stats Cards */}
+      {stats && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="p-4">
-            <div className="flex items-center">
-              <Mail className="w-5 h-5 text-blue-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold text-gray-900">{invitations.length}</div>
-                <div className="text-sm text-gray-500">Total Invitations</div>
-              </div>
-            </div>
+            <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
+            <div className="text-sm text-gray-500">Total Invitations</div>
           </Card>
           <Card className="p-4">
-            <div className="flex items-center">
-              <Clock className="w-5 h-5 text-yellow-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold text-yellow-600">
-                  {invitations.filter(inv => inv.status === 'pending').length}
-                </div>
-                <div className="text-sm text-gray-500">Pending</div>
-              </div>
-            </div>
+            <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
+            <div className="text-sm text-gray-500">Pending</div>
           </Card>
           <Card className="p-4">
-            <div className="flex items-center">
-              <CheckCircle className="w-5 h-5 text-green-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold text-green-600">
-                  {invitations.filter(inv => inv.status === 'completed').length}
-                </div>
-                <div className="text-sm text-gray-500">Completed</div>
-              </div>
-            </div>
+            <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
+            <div className="text-sm text-gray-500">Completed</div>
           </Card>
           <Card className="p-4">
-            <div className="flex items-center">
-              <XCircle className="w-5 h-5 text-red-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold text-red-600">
-                  {invitations.filter(inv => inv.status === 'expired').length}
-                </div>
-                <div className="text-sm text-gray-500">Expired</div>
-              </div>
-            </div>
+            <div className="text-2xl font-bold text-red-600">{stats.expired}</div>
+            <div className="text-sm text-gray-500">Expired</div>
           </Card>
         </div>
+      )}
 
-        {/* Filters */}
-        <div className="flex space-x-4">
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="">All Statuses</option>
-            <option value="pending">Pending</option>
-            <option value="completed">Completed</option>
-            <option value="expired">Expired</option>
-          </select>
-        </div>
+      {/* Filters */}
+      <div className="flex space-x-4">
+        <select
+          value={selectedStatus}
+          onChange={(e) => setSelectedStatus(e.target.value)}
+          className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+        >
+          <option value="">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="completed">Completed</option>
+          <option value="expired">Expired</option>
+        </select>
+      </div>
 
-        {/* Invitations Table */}
-        <Card>
-          <DataTable
-            columns={columns}
-            data={invitations}
-            loading={invitationsLoading}
-            emptyMessage="No invitations found"
-          />
-        </Card>
-
-        {/* Copy success notification */}
-        {copiedLink && (
-          <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-md shadow-lg z-50">
-            Invitation link copied to clipboard!
-          </div>
-        )}
-
-        {/* Create Invitation Modal */}
-        <CreateInvitationModal
-          open={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onSubmit={handleCreateInvitation}
-          loading={creating}
+      {/* Invitations Table */}
+      <Card>
+        <DataTable
+          columns={columns}
+          data={invitations}
+          loading={loading}
+          emptyMessage="No invitations found"
         />
+      </Card>
+
+      {/* Copy success notification */}
+      {copiedLink && (
+        <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-md shadow-lg">
+          Invitation link copied to clipboard!
+        </div>
+      )}
+
+      {/* Create Invitation Modal */}
+      <CreateInvitationModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={handleCreateInvitation}
+        loading={creating}
+      />
       </div>
     </AuthenticatedLayout>
   );

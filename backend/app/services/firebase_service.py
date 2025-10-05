@@ -1,7 +1,7 @@
 import json
 import base64
 import firebase_admin
-from firebase_admin import credentials, auth
+from firebase_admin import credentials, auth, firestore
 from flask import current_app
 import logging
 
@@ -49,3 +49,12 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Token verification failed: {e}")
             return None, str(e)
+    
+    @staticmethod
+    def get_firestore():
+        """Get Firestore client instance."""
+        try:
+            return firestore.client()
+        except Exception as e:
+            logger.error(f"Error getting Firestore client: {e}")
+            raise
