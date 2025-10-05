@@ -23,13 +23,16 @@ export {
   type RecipeTag
 } from './useCatalogs';
 
-// Dashboard hooks
+// Dashboard hooks - explicit export to fix build issue
 export { 
   useDashboard, 
   type DashboardData, 
   type DashboardStats, 
   type WorkflowInvitation 
 } from './useDashboard';
+
+// Invitation actions hook - explicit export to fix build issue
+export { useInvitationActions } from './useInvitationActions';
 
 // Invitations hooks  
 export {
@@ -43,9 +46,6 @@ export {
   type CreateInvitationData,
   type InvitationStats
 } from './useInvitations';
-
-// Invitation actions hook
-export { useInvitationActions } from './useInvitationActions';
 
 // Other hooks
 export * from './useMealPlans'; 

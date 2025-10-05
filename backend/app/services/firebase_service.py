@@ -14,6 +14,15 @@ class FirebaseService:
     def initialize():
         """Initialize Firebase Admin SDK."""
         try:
+            # Check if Firebase is already initialized
+            try:
+                firebase_admin.get_app()
+                logger.info("Firebase Admin already initialized")
+                return
+            except ValueError:
+                # Firebase not initialized, proceed with initialization
+                pass
+            
             config = current_app.config
             
             if config.get('FIREBASE_SERVICE_ACCOUNT_KEY'):
