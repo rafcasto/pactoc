@@ -8,6 +8,7 @@ import { DataTable } from '@/components/ui/DataTable';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { usePatients, usePatientStats, useUpdatePatientStatus, useDeletePatient, type Patient } from '@/lib/hooks/usePatients';
+import { StatusBadge } from '@/components/invitations';
 import { Eye, Edit, Trash2, AlertCircle, Users, UserCheck, Clock, UserX, Plus } from 'lucide-react';
 import Link from 'next/link';
 
@@ -51,17 +52,7 @@ export default function PatientsPage() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const baseClasses = "px-2 py-1 text-xs font-medium rounded-full";
-    switch (status) {
-      case 'pending_review':
-        return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>Pending Review</span>;
-      case 'approved':
-        return <span className={`${baseClasses} bg-green-100 text-green-800`}>Approved</span>;
-      default:
-        return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>{status}</span>;
-    }
-  };
+
 
   const columns = [
     {
@@ -96,7 +87,7 @@ export default function PatientsPage() {
     {
       key: 'profile_status',
       title: 'Status',
-      render: (status: string) => getStatusBadge(status)
+      render: (status: string) => <StatusBadge status={status} type="patient" />
     },
     {
       key: 'conditions',

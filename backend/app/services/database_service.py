@@ -2,9 +2,10 @@
 Database service for PostgreSQL connection using SQLAlchemy.
 """
 import os
+import time
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, DisconnectionError
 from sqlalchemy import text
 
 # Initialize SQLAlchemy instance
@@ -23,12 +24,24 @@ def init_db(app):
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
-    # Configure SQLAlchemy
+    # Configure SQLAlchemy with optimized settings
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
+        # Connection pool settings
+        'pool_size': 10,                    # Maintain 10 persistent connections
+        'max_overflow': 20,                 # Allow up to 30 total connections
+        'pool_pre_ping': True,              # Verify connections before use
+        'pool_recycle': 3600,               # Recycle connections after 1 hour (instead of 5 min)
+        
+        # Connection timeout settings
+        'connect_args': {
+            'connect_timeout': 10,          # Fail fast if connection takes >10s
+            'application_name': 'pactoc_app',  # Identify your app in database logs
+            'keepalives_idle': 600,         # TCP keepalive settings
+            'keepalives_interval': 30,
+            'keepalives_count': 3,
+        }
     }
     
     # Initialize with app
@@ -62,18 +75,30 @@ def create_tables():
         print(f"❌ Unexpected error: {e}")
         return False
 
-def test_connection():
-    """Test database connection."""
-    try:
-        # Test connection with SQLAlchemy 2.0 syntax
-        with db.engine.connect() as connection:
-            result = connection.execute(text('SELECT 1'))
-            result.fetchone()
-        print("✅ Database connection successful")
-        return True
-    except SQLAlchemyError as e:
-        print(f"❌ Database connection failed: {e}")
-        return False
-    except Exception as e:
-        print(f"❌ Unexpected error testing connection: {e}")
-        return False
+def test_connection(retry_count=3, retry_delay=1):
+    """Test database connection with retry logic."""
+    for attempt in range(retry_count):
+        try:
+            start_time = time.time()
+            # Test connection with SQLAlchemy 2.0 syntax
+            with db.engine.connect() as connection:
+                result = connection.execute(text('SELECT 1'))
+                result.fetchone()
+            
+            connection_time = time.time() - start_time
+            print(f"✅ Database connection successful in {connection_time:.3f}s")
+            return True
+            
+        except (SQLAlchemyError, DisconnectionError) as e:
+            if attempt < retry_count - 1:
+                print(f"⚠️ Database connection attempt {attempt + 1} failed, retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                print(f"❌ Database connection failed after {retry_count} attempts: {e}")
+                return False
+        except Exception as e:
+            print(f"❌ Unexpected error testing connection: {e}")
+            return False
+    
+    return False

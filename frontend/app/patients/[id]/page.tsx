@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { usePatient, useUpdatePatient, useAddPatientCondition, useRemovePatientCondition, type Patient } from '@/lib/hooks/usePatients';
+import { StatusBadge } from '@/components/invitations';
 import { ArrowLeft, Edit, Plus, Trash2, Calendar, Mail, Phone, AlertCircle, User, Heart, AlertTriangle, Utensils } from 'lucide-react';
 import Link from 'next/link';
 
@@ -56,17 +57,7 @@ export default function PatientDetailPage() {
     );
   }
 
-  const getStatusBadge = (status: string) => {
-    const baseClasses = "px-3 py-1 text-sm font-medium rounded-full";
-    switch (status) {
-      case 'pending_review':
-        return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>Pending Review</span>;
-      case 'approved':
-        return <span className={`${baseClasses} bg-green-100 text-green-800`}>Approved</span>;
-      default:
-        return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>{status}</span>;
-    }
-  };
+
 
   return (
     <div className="space-y-6">
@@ -84,7 +75,7 @@ export default function PatientDetailPage() {
               {patient.first_name} {patient.last_name}
             </h1>
             <div className="flex items-center space-x-2 mt-1">
-              {getStatusBadge(patient.profile_status)}
+              <StatusBadge status={patient.profile_status} type="patient" />
               <span className="text-sm text-gray-500">
                 Created {new Date(patient.created_at).toLocaleDateString()}
               </span>

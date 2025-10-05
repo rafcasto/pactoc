@@ -11,7 +11,7 @@ from ..models.sql_models import (
     Ingredient, RecipeTag
 )
 
-catalogs_bp = Blueprint('catalogs', __name__, url_prefix='/catalogs')
+catalogs_bp = Blueprint('catalogs', __name__, url_prefix='/api/catalogs')
 
 # Medical Conditions
 @catalogs_bp.route('/medical-conditions', methods=['GET'])

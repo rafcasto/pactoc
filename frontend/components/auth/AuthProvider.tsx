@@ -25,16 +25,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          photoURL: firebaseUser.photoURL,
-          emailVerified: firebaseUser.emailVerified,
-        });
+        try {
+          // Get the Firebase ID token and store it in localStorage
+          const token = await firebaseUser.getIdToken();
+          localStorage.setItem('token', token);
+          
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            photoURL: firebaseUser.photoURL,
+            emailVerified: firebaseUser.emailVerified,
+          });
+        } catch (error) {
+          console.error('Failed to get Firebase token:', error);
+          localStorage.removeItem('token');
+          setUser(null);
+        }
       } else {
+        // User signed out, remove token
+        localStorage.removeItem('token');
         setUser(null);
       }
       setLoading(false);

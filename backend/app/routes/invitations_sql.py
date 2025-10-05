@@ -9,7 +9,7 @@ from ..utils.responses import success_response, error_response
 from ..services.database_service import db
 from ..models.sql_models import PatientInvitation, Patient
 
-invitations_bp = Blueprint('invitations', __name__, url_prefix='/invitations')
+invitations_bp = Blueprint('invitations', __name__, url_prefix='/api/invitations')
 
 @invitations_bp.route('', methods=['GET'])
 @require_auth
@@ -52,6 +52,36 @@ def get_invitations():
         
     except Exception as e:
         return error_response(f"Error retrieving invitations: {str(e)}", 500)
+
+@invitations_bp.route('/stats', methods=['GET'])
+@require_auth
+def get_invitation_stats():
+    """Get invitation statistics."""
+    try:
+        user = request.user
+        
+        # Get counts for invitations created by this user
+        base_query = PatientInvitation.query.filter_by(invited_by_uid=user['uid'])
+        
+        total = base_query.count()
+        pending = base_query.filter_by(status='pending').count()
+        completed = base_query.filter_by(status='completed').count()
+        expired = base_query.filter(
+            PatientInvitation.status == 'pending',
+            PatientInvitation.expires_at < datetime.utcnow()
+        ).count()
+        
+        stats = {
+            'total': total,
+            'pending': pending,
+            'completed': completed,
+            'expired': expired
+        }
+        
+        return success_response({'stats': stats}, "Statistics retrieved successfully")
+        
+    except Exception as e:
+        return error_response(f"Error retrieving statistics: {str(e)}", 500)
 
 @invitations_bp.route('', methods=['POST'])
 @require_auth

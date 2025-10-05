@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import { RecaptchaProvider } from '@/lib/recaptcha/provider';
+import { ToastProvider } from '@/components/ui/Toast';
 import { Header } from '@/components/layout/Header';
 import Script from 'next/script';
 import {GA_TRACKING_ID} from '../lib/utils/analytics'
@@ -23,10 +24,12 @@ export default function RootLayout({
       <body className={inter.className}>
         <RecaptchaProvider>
           <AuthProvider>
-            <div className="min-h-screen bg-gray-50">
-              <Header />
-              <main>{children}</main>
-            </div>
+            <ToastProvider>
+              <div className="min-h-screen bg-gray-50">
+                <Header />
+                <main>{children}</main>
+              </div>
+            </ToastProvider>
           </AuthProvider>
         </RecaptchaProvider>
         <Script

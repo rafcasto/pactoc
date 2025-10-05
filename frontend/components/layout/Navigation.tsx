@@ -6,12 +6,11 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils/helpers';
 import { 
   Home, 
-  Mail, 
   Users, 
   ChefHat, 
   Calendar, 
-  Settings,
-  Package
+  Package,
+  UserPlus
 } from 'lucide-react';
 
 interface NavigationItem {
@@ -26,7 +25,13 @@ const navigation: NavigationItem[] = [
     name: 'Dashboard',
     href: '/dashboard',
     icon: Home,
-    description: 'Patient invitations & overview'
+    description: 'Overview & analytics'
+  },
+  {
+    name: 'Invitations',
+    href: '/invitations',
+    icon: UserPlus,
+    description: 'Patient invitations'
   },
   {
     name: 'Patients',

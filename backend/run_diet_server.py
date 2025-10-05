@@ -34,5 +34,8 @@ def main():
     except KeyboardInterrupt:
         print("\n👋 Servidor detenido")
 
+# For Vercel deployment
+app = create_app('production' if os.environ.get('VERCEL') else 'development')
+
 if __name__ == '__main__':
     main()

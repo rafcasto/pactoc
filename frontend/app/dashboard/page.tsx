@@ -1,397 +1,183 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { AuthenticatedLayout } from '@/components/layout/AuthenticatedLayout';
-import { Card } from '@/components/ui/Card';
+import { RefreshCw, Plus, Calendar, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Modal, ModalFooter } from '@/components/ui/Modal';
-import { DataTable } from '@/components/ui/DataTable';
-import { useInvitations, useCreateInvitation, useResendInvitation, useRegenerateInvitation, useCancelInvitation, type Invitation } from '@/lib/hooks/useInvitations';
-import { Plus, Mail, Clock, CheckCircle, XCircle, Copy, RefreshCw, Trash2, AlertCircle, RotateCw } from 'lucide-react';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { DashboardStats } from '@/components/dashboard/DashboardStats';
+import { QuickActions } from '@/components/dashboard/QuickActions';
+import { RecentActivity } from '@/components/dashboard/RecentActivity';
+import { PriorityQueue } from '@/components/dashboard/PriorityQueue';
+import { useDashboard } from '@/lib/hooks/useDashboard';
+import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
-  // Invitation states
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [copiedLink, setCopiedLink] = useState<string | null>(null);
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
-  
-  // Invitation hooks
-  const { data: invitationsData, loading: invitationsLoading, error, refetch: refetchInvitations } = useInvitations(selectedStatus);
-  const { createInvitation, loading: creating } = useCreateInvitation();
-  const { resendInvitation, loading: resending } = useResendInvitation();
-  const { regenerateInvitation, loading: regenerating } = useRegenerateInvitation();
-  const { cancelInvitation, loading: canceling } = useCancelInvitation();
+  const { dashboardData, stats, loading, error, refreshData } = useDashboard();
+  const [refreshing, setRefreshing] = useState(false);
+  const router = useRouter();
 
-  // Invitation handlers
-  const handleCreateInvitation = async (data: { email: string; first_name?: string; last_name?: string }) => {
-    try {
-      await createInvitation(data);
-      setShowCreateModal(false);
-      refetchInvitations();
-    } catch (error) {
-      console.error('Failed to create invitation:', error);
-    }
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshData();
+    setRefreshing(false);
   };
 
-  const handleResendInvitation = async (invitationId: string) => {
-    try {
-      await resendInvitation(invitationId);
-      refetchInvitations();
-    } catch (error) {
-      console.error('Failed to resend invitation:', error);
-    }
+  const handleCreateInvitation = () => {
+    router.push('/meal-plan-workflow?create=true');
   };
 
-  const handleRegenerateInvitation = async (invitationId: string) => {
-    if (confirm('Are you sure you want to regenerate this invitation link? The old link will no longer work.')) {
-      try {
-        await regenerateInvitation(invitationId);
-        refetchInvitations();
-      } catch (error) {
-        console.error('Failed to regenerate invitation:', error);
-      }
-    }
-  };
-
-  const handleCancelInvitation = async (invitationId: string) => {
-    if (confirm('Are you sure you want to cancel this invitation?')) {
-      try {
-        await cancelInvitation(invitationId);
-        refetchInvitations();
-      } catch (error) {
-        console.error('Failed to cancel invitation:', error);
-      }
-    }
-  };
-
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedLink(text);
-      setTimeout(() => setCopiedLink(null), 2000);
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const baseClasses = "px-2 py-1 text-xs font-medium rounded-full";
-    switch (status) {
-      case 'pending':
-        return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>Pending</span>;
-      case 'completed':
-        return <span className={`${baseClasses} bg-green-100 text-green-800`}>Completed</span>;
-      case 'expired':
-        return <span className={`${baseClasses} bg-red-100 text-red-800`}>Expired</span>;
-      default:
-        return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>{status}</span>;
-    }
-  };
-
-  const invitations = invitationsData?.invitations || [];
-
-  const columns = [
-    {
-      key: 'email',
-      title: 'Email',
-      render: (email: string, record: Invitation) => (
-        <div>
-          <div className="font-medium">{email}</div>
-          {(record.first_name || record.last_name) && (
-            <div className="text-sm text-gray-500">
-              {record.first_name} {record.last_name}
-            </div>
-          )}
-        </div>
-      )
-    },
-    {
-      key: 'status',
-      title: 'Status',
-      render: (status: string) => getStatusBadge(status)
-    },
-    {
-      key: 'created_at',
-      title: 'Created',
-      render: (date: string) => new Date(date).toLocaleDateString()
-    },
-    {
-      key: 'expires_at',
-      title: 'Expires',
-      render: (date: string) => new Date(date).toLocaleDateString()
-    },
-    {
-      key: 'actions',
-      title: 'Actions',
-      render: (_: any, record: Invitation) => (
-        <div className="flex space-x-2">
-          {record.status === 'pending' && record.public_link && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation();
-                copyToClipboard(record.public_link!);
-              }}
-              title="Copy invitation link"
-            >
-              <Copy className="w-4 h-4" />
-            </Button>
-          )}
-          {record.status === 'pending' && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleResendInvitation(record.id);
-              }}
-              loading={resending}
-              title="Resend invitation (extend expiry)"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-          )}
-          {record.status === 'pending' && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRegenerateInvitation(record.id);
-              }}
-              loading={regenerating}
-              title="Regenerate invitation link"
-            >
-              <RotateCw className="w-4 h-4" />
-            </Button>
-          )}
-          {record.status === 'pending' && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCancelInvitation(record.id);
-              }}
-              loading={canceling}
-              title="Cancel invitation"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          )}
-        </div>
-      )
-    }
-  ];
-
-  if (error) {
+  if (loading) {
     return (
-      <AuthenticatedLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Error loading invitations</h3>
-            <p className="text-gray-500 mb-4">{error}</p>
-            <Button onClick={refetchInvitations}>Try Again</Button>
-          </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-gray-600">Loading dashboard...</p>
         </div>
-      </AuthenticatedLayout>
+      </div>
     );
   }
 
+  if (error) {
+    const isAuthError = error.includes('log in') || error.includes('authenticated');
+    
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center py-12">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md mx-auto">
+              <h2 className="text-lg font-semibold text-red-900 mb-2">
+                {isAuthError ? 'Authentication Required' : 'Error Loading Dashboard'}
+              </h2>
+              <p className="text-red-700 mb-4">{error}</p>
+              <div className="flex gap-2 justify-center">
+                {isAuthError ? (
+                  <Button onClick={() => router.push('/login')} className="mr-2">
+                    Go to Login
+                  </Button>
+                ) : null}
+                <Button onClick={handleRefresh} variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Try Again
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const currentDate = new Date();
+  const greeting = (() => {
+    const hour = currentDate.getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
+
   return (
     <AuthenticatedLayout>
-      <div className="space-y-6">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <p className="mt-1 text-sm text-gray-500">Patient invitations and system overview</p>
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {greeting}! 👋
+              </h1>
+              <p className="text-gray-600 mt-1">
+                Here's what's happening with your patients today
+              </p>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Button
+                onClick={handleRefresh}
+                variant="outline"
+                disabled={refreshing}
+                className="hidden sm:flex"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+              <Button
+                onClick={handleCreateInvitation}
+                className="flex items-center"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Invitation
+              </Button>
+            </div>
           </div>
-          <Button onClick={() => setShowCreateModal(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Invitation
-          </Button>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="p-4">
+          
+          {/* Date and quick stats */}
+          <div className="mt-4 flex items-center space-x-6 text-sm text-gray-500">
             <div className="flex items-center">
-              <Mail className="w-5 h-5 text-blue-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold text-gray-900">{invitations.length}</div>
-                <div className="text-sm text-gray-500">Total Invitations</div>
-              </div>
+              <Calendar className="h-4 w-4 mr-1" />
+              {currentDate.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
             </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center">
-              <Clock className="w-5 h-5 text-yellow-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold text-yellow-600">
-                  {invitations.filter(inv => inv.status === 'pending').length}
-                </div>
-                <div className="text-sm text-gray-500">Pending</div>
+            {stats.pending_reviews > 0 && (
+              <div className="flex items-center text-yellow-600">
+                <TrendingUp className="h-4 w-4 mr-1" />
+                {stats.pending_reviews} review{stats.pending_reviews !== 1 ? 's' : ''} pending
               </div>
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center">
-              <CheckCircle className="w-5 h-5 text-green-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold text-green-600">
-                  {invitations.filter(inv => inv.status === 'completed').length}
-                </div>
-                <div className="text-sm text-gray-500">Completed</div>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center">
-              <XCircle className="w-5 h-5 text-red-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold text-red-600">
-                  {invitations.filter(inv => inv.status === 'expired').length}
-                </div>
-                <div className="text-sm text-gray-500">Expired</div>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Filters */}
-        <div className="flex space-x-4">
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="">All Statuses</option>
-            <option value="pending">Pending</option>
-            <option value="completed">Completed</option>
-            <option value="expired">Expired</option>
-          </select>
-        </div>
-
-        {/* Invitations Table */}
-        <Card>
-          <DataTable
-            columns={columns}
-            data={invitations}
-            loading={invitationsLoading}
-            emptyMessage="No invitations found"
-          />
-        </Card>
-
-        {/* Copy success notification */}
-        {copiedLink && (
-          <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-md shadow-lg z-50">
-            Invitation link copied to clipboard!
+            )}
           </div>
-        )}
+        </div>
 
-        {/* Create Invitation Modal */}
-        <CreateInvitationModal
-          open={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onSubmit={handleCreateInvitation}
-          loading={creating}
-        />
+        {/* Stats Overview */}
+        <div className="mb-8">
+          <DashboardStats stats={stats} loading={loading} />
+        </div>
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+          {/* Priority Queue - Takes full width on small screens, 2 cols on large */}
+          <div className="lg:col-span-2">
+            <PriorityQueue
+              pendingReviews={dashboardData.pending_review}
+              pendingInvitations={dashboardData.pending_invitations}
+              approvedPlans={dashboardData.approved_plans}
+              loading={loading}
+            />
+          </div>
+
+          {/* Recent Activity - Side panel */}
+          <div className="lg:col-span-1">
+            <RecentActivity
+              pendingReviews={dashboardData.pending_review}
+              recentApprovals={dashboardData.approved_plans.slice(0, 5)}
+              pendingInvitations={dashboardData.pending_invitations}
+              loading={loading}
+            />
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="mb-8">
+          <QuickActions onCreateInvitation={handleCreateInvitation} />
+        </div>
+
+        {/* Summary Footer */}
+        <div className="mt-12 pt-8 border-t border-gray-200">
+          <div className="text-center text-sm text-gray-500">
+            <p>
+              Dashboard last updated: {new Date().toLocaleTimeString()}
+            </p>
+            <p className="mt-1">
+              Managing {stats.total_patients} patient{stats.total_patients !== 1 ? 's' : ''} 
+              {stats.active_meal_plans > 0 && (
+                <> with {stats.active_meal_plans} active meal plan{stats.active_meal_plans !== 1 ? 's' : ''}</>
+              )}
+            </p>
+          </div>
+        </div>
       </div>
     </AuthenticatedLayout>
-  );
-}
-
-interface CreateInvitationModalProps {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (data: { email: string; first_name?: string; last_name?: string }) => void;
-  loading: boolean;
-}
-
-function CreateInvitationModal({ open, onClose, onSubmit, loading }: CreateInvitationModalProps) {
-  const [formData, setFormData] = useState({
-    email: '',
-    first_name: '',
-    last_name: ''
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.email) return;
-
-    const submitData: any = { email: formData.email };
-    if (formData.first_name) submitData.first_name = formData.first_name;
-    if (formData.last_name) submitData.last_name = formData.last_name;
-
-    onSubmit(submitData);
-  };
-
-  const resetForm = () => {
-    setFormData({ email: '', first_name: '', last_name: '' });
-  };
-
-  return (
-    <Modal
-      open={open}
-      onClose={() => {
-        onClose();
-        resetForm();
-      }}
-      title="Create Patient Invitation"
-      size="md"
-    >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Email Address *
-          </label>
-          <Input
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            required
-            placeholder="patient@example.com"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              First Name
-            </label>
-            <Input
-              type="text"
-              value={formData.first_name}
-              onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-              placeholder="John"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Last Name
-            </label>
-            <Input
-              type="text"
-              value={formData.last_name}
-              onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-              placeholder="Doe"
-            />
-          </div>
-        </div>
-
-        <ModalFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" loading={loading} disabled={!formData.email}>
-            Create Invitation
-          </Button>
-        </ModalFooter>
-      </form>
-    </Modal>
   );
 }

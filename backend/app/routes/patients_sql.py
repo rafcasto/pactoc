@@ -13,7 +13,7 @@ from ..models.sql_models import (
     PatientDietaryPreference
 )
 
-patients_bp = Blueprint('patients_sql', __name__, url_prefix='/patients')
+patients_bp = Blueprint('patients_sql', __name__, url_prefix='/api/patients')
 
 @patients_bp.route('', methods=['GET'])
 @require_auth
