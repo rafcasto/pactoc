@@ -44,8 +44,10 @@ export {
   type InvitationStats
 } from './useInvitations';
 
-// Re-export individual hook files that may not have specific exports checked yet
-export * from './useInvitationActions';
+// Invitation actions hook
+export { useInvitationActions } from './useInvitationActions';
+
+// Other hooks
 export * from './useMealPlans'; 
 export * from './usePatients';
 export * from './useRecaptcha';
