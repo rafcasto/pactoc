@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Clock, Users, Utensils, Info, Loader2, AlertCircle } from 'lucide-react';
 
+// Get API base URL from environment
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 interface Patient {
   first_name: string;
   conditions: string[];
@@ -222,7 +225,7 @@ export default function ViewMealPlan() {
   const fetchPlan = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/public/meal-plans/${token}`);
+      const response = await fetch(`${API_BASE_URL}/api/public/meal-plans/${token}`);
       
       if (!response.ok) {
         const errorData = await response.json();

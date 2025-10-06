@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Utensils, User, Heart, AlertCircle, ChevronRight, Loader2 } from 'lucide-react';
 
+// Get API base URL from environment
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 interface InvitationData {
   invitation_id: number;
   email: string;
@@ -75,7 +78,7 @@ export default function CompleteProfile() {
       setLoading(true);
       
       // Validar token
-      const tokenResponse = await fetch(`/api/public/invitations/${token}`);
+      const tokenResponse = await fetch(`${API_BASE_URL}/api/public/invitations/${token}`);
       const tokenData = await tokenResponse.json();
       
       if (!tokenResponse.ok || !tokenData.valid) {
@@ -98,7 +101,7 @@ export default function CompleteProfile() {
       }
       
       // Cargar catálogos
-      const catalogsResponse = await fetch('/api/public/catalogs');
+      const catalogsResponse = await fetch(`${API_BASE_URL}/api/public/catalogs`);
       if (catalogsResponse.ok) {
         const catalogsData = await catalogsResponse.json();
         setCatalogs(catalogsData);
@@ -168,7 +171,7 @@ export default function CompleteProfile() {
     setError(null);
     
     try {
-      const response = await fetch(`/api/public/profiles/${token}`, {
+      const response = await fetch(`${API_BASE_URL}/api/public/profiles/${token}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
