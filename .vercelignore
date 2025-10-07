@@ -1,0 +1,27 @@
+# Development files
+backend/venv/
+backend/__pycache__/
+backend/.env
+backend/*.db
+backend/instance/
+backend/server.log
+backend/debug_*.py
+backend/test_*.py
+backend/test_*.sh
+backend/scripts/
+
+# Frontend files (if deploying backend only)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Git and IDE files
+.git/
+.vscode/
+.idea/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.DS_Store
+*.log

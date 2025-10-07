@@ -37,7 +37,11 @@ def create_app(config_name=None):
     # Initialize PostgreSQL database
     with app.app_context():
         try:
-            init_db(app)
+            # Only initialize DB if DATABASE_URL is provided
+            if os.getenv('DATABASE_URL'):
+                init_db(app)
+            else:
+                app.logger.warning("DATABASE_URL not set, skipping database initialization")
         except Exception as e:
             app.logger.error(f"Database initialization failed: {e}")
             # In Vercel/serverless, continue without DB for health checks
