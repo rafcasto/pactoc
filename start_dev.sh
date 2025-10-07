@@ -46,7 +46,7 @@ cd ..
 
 echo "🔧 Iniciando Backend del Sistema de Recetas (Puerto 8000)..."
 cd backend
-python3.11 run_diet_server.py > server.log 2>&1 &
+./venv/bin/python run_diet_server.py > server.log 2>&1 &
 BACKEND_PID=$!
 cd ..
 

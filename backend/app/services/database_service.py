@@ -21,15 +21,33 @@ def init_db(app):
         raise ValueError("DATABASE_URL environment variable is required. Please set it to your PostgreSQL connection string.")
     
     # Fix for PostgreSQL URL format (some providers use postgres:// instead of postgresql://)
-    # For pg8000, we need to use postgresql+pg8000:// scheme
+    # For pg8000, we need to use postgresql+pg8000:// scheme and handle SSL separately
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql+pg8000://', 1)
     elif database_url.startswith('postgresql://'):
         database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
     
+    # Handle SSL mode for pg8000 - remove sslmode from URL and add to connect_args
+    ssl_required = False
+    if 'sslmode=require' in database_url:
+        # Remove any sslmode parameter from the URL
+        import re
+        database_url = re.sub(r'[?&]sslmode=require', '', database_url)
+        ssl_required = True
+    
     # Configure SQLAlchemy with optimized settings
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # Prepare connect_args based on SSL requirements
+    connect_args = {
+        'application_name': 'pactoc_app',  # Identify your app in database logs
+    }
+    
+    # Add SSL settings if required (for pg8000, SSL is handled differently)
+    if ssl_required:
+        import ssl
+        connect_args['ssl_context'] = ssl.create_default_context()  # Enable SSL for pg8000
+    
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         # Connection pool settings
         'pool_size': 10,                    # Maintain 10 persistent connections
@@ -38,13 +56,7 @@ def init_db(app):
         'pool_recycle': 3600,               # Recycle connections after 1 hour (instead of 5 min)
         
         # Connection timeout settings
-        'connect_args': {
-            'connect_timeout': 10,          # Fail fast if connection takes >10s
-            'application_name': 'pactoc_app',  # Identify your app in database logs
-            'keepalives_idle': 600,         # TCP keepalive settings
-            'keepalives_interval': 30,
-            'keepalives_count': 3,
-        }
+        'connect_args': connect_args
     }
     
     # Initialize with app

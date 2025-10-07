@@ -8,6 +8,9 @@ class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     PORT = int(os.getenv('PORT', 5000))
     
+    # Database Configuration
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    
     # Firebase Configuration
     FIREBASE_SERVICE_ACCOUNT_KEY = os.getenv('FIREBASE_SERVICE_ACCOUNT_KEY')
     FIREBASE_SERVICE_ACCOUNT_BASE64 = os.getenv('FIREBASE_SERVICE_ACCOUNT_BASE64')
