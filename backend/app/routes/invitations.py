@@ -2,9 +2,71 @@ from flask import Blueprint, request, jsonify
 from ..utils.auth_utils import require_auth, get_current_user_uid
 from ..services.invitation_service import InvitationService
 from ..models.patient_invitation import PatientInvitation
+from ..services.database_service import db
 from ..utils.responses import success_response, error_response
+from datetime import datetime
 
 invitations_bp = Blueprint('invitations', __name__, url_prefix='/api/invitations')
+
+@invitations_bp.route('/register-nutritionist', methods=['POST'])
+@require_auth
+def register_nutritionist():
+    """Register the current user as a nutritionist."""
+    try:
+        user_uid = get_current_user_uid()
+        
+        if not user_uid:
+            return error_response('Invalid authentication - no user UID found', 401)
+        
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data or not data.get('email'):
+            return error_response('Email is required', 400)
+        if not data.get('first_name'):
+            return error_response('First name is required', 400)
+        if not data.get('last_name'):
+            return error_response('Last name is required', 400)
+        
+        # Check if nutritionist already exists
+        from ..models.sql_models import Nutritionist
+        existing = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if existing:
+            return success_response({
+                'nutritionist': existing.to_dict(),
+                'message': 'Nutritionist already registered'
+            })
+        
+        # Check if email already exists
+        existing_email = Nutritionist.query.filter_by(email=data['email']).first()
+        if existing_email:
+            return error_response('Email already registered to another nutritionist', 400)
+        
+        # Create new nutritionist
+        nutritionist = Nutritionist(
+            firebase_uid=user_uid,
+            email=data['email'],
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            phone=data.get('phone'),
+            license_number=data.get('license_number'),
+            specialization=data.get('specialization'),
+            bio=data.get('bio'),
+            is_active=True,
+            is_verified=True,  # Auto-verify for now
+            verification_date=datetime.utcnow()
+        )
+        
+        db.session.add(nutritionist)
+        db.session.commit()
+        
+        return success_response({
+            'nutritionist': nutritionist.to_dict()
+        }, 'Nutritionist registered successfully', 201)
+        
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f'Error registering nutritionist: {str(e)}', 500)
 
 @invitations_bp.route('/', methods=['POST'])
 @require_auth
@@ -47,6 +109,9 @@ def list_invitations():
     try:
         user_uid = get_current_user_uid()
         
+        if not user_uid:
+            return error_response('Invalid authentication - no user UID found', 401)
+        
         # Get query parameters
         status = request.args.get('status')  # pending, completed, expired
         
@@ -54,9 +119,35 @@ def list_invitations():
         from ..models.sql_models import Nutritionist
         nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
         if not nutritionist:
-            return error_response('Nutritionist not found', 404)
+            # Auto-register the user as a nutritionist with basic info
+            # In a production system, you'd want a proper registration flow
+            try:
+                # Extract email from Firebase token if available
+                user_email = getattr(request, 'user', {}).get('email', f'user-{user_uid[:8]}@example.com')
+                
+                nutritionist = Nutritionist(
+                    firebase_uid=user_uid,
+                    email=user_email,
+                    first_name='Nutritionist',
+                    last_name=user_uid[:8],  # Use part of UID as temp last name
+                    is_active=True,
+                    is_verified=True,
+                    verification_date=datetime.utcnow()
+                )
+                
+                db.session.add(nutritionist)
+                db.session.commit()
+                
+                print(f"Auto-registered new nutritionist: {user_uid} -> {user_email}")
+                
+            except Exception as auto_reg_error:
+                db.session.rollback()
+                return error_response(
+                    f'Failed to auto-register nutritionist: {str(auto_reg_error)}. Please contact support.',
+                    500
+                )
         
-        # Get invitations for this nutritionist
+        # Get invitations for this nutritionist ONLY - strict filtering
         query = PatientInvitation.query.filter_by(nutritionist_id=nutritionist.id)
         
         # Filter by status if provided
@@ -72,7 +163,9 @@ def list_invitations():
         
         return success_response({
             'invitations': invitations,
-            'total': len(invitations)
+            'total': len(invitations),
+            'nutritionist_id': nutritionist.id,  # Add for debugging
+            'user_uid': user_uid  # Add for debugging
         })
         
     except Exception as e:

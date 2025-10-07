@@ -279,14 +279,39 @@ class MealPlanWorkflowService:
     def get_nutritionist_dashboard_data(nutritionist_uid: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
         """Get dashboard data for nutritionist."""
         try:
+            if not nutritionist_uid:
+                return False, None, "Invalid nutritionist UID provided"
+                
             # First get the nutritionist entity
             from ..models.sql_models import Nutritionist
+            from ..services.database_service import db
+            from datetime import datetime
+            
             nutritionist = Nutritionist.query.filter_by(firebase_uid=nutritionist_uid).first()
             if not nutritionist:
-                return False, None, "Nutritionist not found"
+                # Auto-register the user as a nutritionist with basic info
+                try:
+                    nutritionist = Nutritionist(
+                        firebase_uid=nutritionist_uid,
+                        email=f'user-{nutritionist_uid[:8]}@example.com',
+                        first_name='Nutritionist',
+                        last_name=nutritionist_uid[:8],
+                        is_active=True,
+                        is_verified=True,
+                        verification_date=datetime.utcnow()
+                    )
+                    
+                    db.session.add(nutritionist)
+                    db.session.commit()
+                    
+                    print(f"Auto-registered new nutritionist in dashboard: {nutritionist_uid}")
+                    
+                except Exception as auto_reg_error:
+                    db.session.rollback()
+                    return False, None, f"Failed to auto-register nutritionist: {str(auto_reg_error)}"
             
             # Get invitations where patients have submitted forms (completed status)
-            # and don't have approved meal plans yet
+            # and don't have approved meal plans yet - STRICTLY filter by nutritionist_id
             completed_invitations = PatientInvitation.query.filter_by(
                 nutritionist_id=nutritionist.id,
                 status='completed'
@@ -314,13 +339,19 @@ class MealPlanWorkflowService:
                     MealPlan.status == 'approved'
                 ).all()
             
-            # Get pending invitations
+            # Get pending invitations - STRICTLY filter by nutritionist_id
             pending_invitations = PatientInvitation.query.filter_by(
                 nutritionist_id=nutritionist.id,
                 status='pending'
             ).all()
             
             dashboard_data = {
+                'nutritionist_info': {
+                    'id': nutritionist.id,
+                    'uid': nutritionist.firebase_uid,
+                    'email': nutritionist.email,
+                    'name': f"{nutritionist.first_name} {nutritionist.last_name}"
+                },
                 'pending_review': [
                     {
                         'invitation_id': inv.id,
