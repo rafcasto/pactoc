@@ -21,8 +21,11 @@ def init_db(app):
         raise ValueError("DATABASE_URL environment variable is required. Please set it to your PostgreSQL connection string.")
     
     # Fix for PostgreSQL URL format (some providers use postgres:// instead of postgresql://)
+    # For pg8000, we need to use postgresql+pg8000:// scheme
     if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        database_url = database_url.replace('postgres://', 'postgresql+pg8000://', 1)
+    elif database_url.startswith('postgresql://'):
+        database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
     
     # Configure SQLAlchemy with optimized settings
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
