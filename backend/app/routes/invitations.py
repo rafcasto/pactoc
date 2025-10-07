@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from ..middleware.auth import require_auth
+from ..utils.auth_utils import require_auth, get_current_user_uid
 from ..services.invitation_service import InvitationService
 from ..models.patient_invitation import PatientInvitation
 from ..utils.responses import success_response, error_response
@@ -22,7 +22,7 @@ def create_invitation():
         last_name = data.get('last_name')
         
         # Get current user from auth middleware
-        user_uid = request.user.get('uid')
+        user_uid = get_current_user_uid()
         
         # Create invitation
         invitation, public_link = InvitationService.create_invitation(
@@ -45,16 +45,25 @@ def create_invitation():
 def list_invitations():
     """Get all invitations created by the current user."""
     try:
-        user_uid = request.user.get('uid')
+        user_uid = get_current_user_uid()
         
         # Get query parameters
         status = request.args.get('status')  # pending, completed, expired
         
-        invitations = PatientInvitation.get_all_by_user(user_uid)
+        # Get nutritionist first
+        from ..models.sql_models import Nutritionist
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get invitations for this nutritionist
+        query = PatientInvitation.query.filter_by(nutritionist_id=nutritionist.id)
         
         # Filter by status if provided
         if status:
-            invitations = [inv for inv in invitations if inv['status'] == status]
+            query = query.filter_by(status=status)
+        
+        invitations = [inv.to_dict() for inv in query.all()]
         
         # Add public links to pending invitations
         for invitation in invitations:
@@ -74,21 +83,30 @@ def list_invitations():
 def get_invitation(invitation_id):
     """Get a specific invitation."""
     try:
-        invitation = PatientInvitation.get_by_id(invitation_id)
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        from ..models.sql_models import Nutritionist
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get invitation and verify ownership
+        invitation = PatientInvitation.query.filter_by(
+            id=invitation_id,
+            nutritionist_id=nutritionist.id
+        ).first()
         
         if not invitation:
             return error_response('Invitation not found', 404)
         
-        # Check if user owns this invitation
-        user_uid = request.user.get('uid')
-        if invitation['invited_by_uid'] != user_uid:
-            return error_response('Access denied', 403)
+        invitation_dict = invitation.to_dict()
         
         # Add public link if pending
-        if invitation['status'] == 'pending':
-            invitation['public_link'] = InvitationService._generate_public_link(invitation['token'])
+        if invitation.status == 'pending':
+            invitation_dict['public_link'] = InvitationService._generate_public_link(invitation.token)
         
-        return success_response({'invitation': invitation})
+        return success_response({'invitation': invitation_dict})
         
     except Exception as e:
         return error_response(f'Error retrieving invitation: {str(e)}', 500)
@@ -98,14 +116,22 @@ def get_invitation(invitation_id):
 def resend_invitation(invitation_id):
     """Resend invitation email."""
     try:
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        from ..models.sql_models import Nutritionist
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
         # Check if invitation exists and user owns it
-        invitation = PatientInvitation.get_by_id(invitation_id)
+        invitation = PatientInvitation.query.filter_by(
+            id=invitation_id,
+            nutritionist_id=nutritionist.id
+        ).first()
+        
         if not invitation:
             return error_response('Invitation not found', 404)
-        
-        user_uid = request.user.get('uid')
-        if invitation['invited_by_uid'] != user_uid:
-            return error_response('Access denied', 403)
         
         # Resend invitation
         success, error_msg = InvitationService.resend_invitation(invitation_id)
@@ -114,11 +140,12 @@ def resend_invitation(invitation_id):
             return error_response(error_msg, 400)
         
         # Get updated invitation
-        updated_invitation = PatientInvitation.get_by_id(invitation_id)
-        updated_invitation['public_link'] = InvitationService._generate_public_link(updated_invitation['token'])
+        updated_invitation = PatientInvitation.query.get(invitation_id)
+        invitation_dict = updated_invitation.to_dict()
+        invitation_dict['public_link'] = InvitationService._generate_public_link(updated_invitation.token)
         
         return success_response({
-            'invitation': updated_invitation
+            'invitation': invitation_dict
         }, 'Invitation resent successfully')
         
     except Exception as e:
@@ -129,20 +156,27 @@ def resend_invitation(invitation_id):
 def cancel_invitation(invitation_id):
     """Cancel (expire) an invitation."""
     try:
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        from ..models.sql_models import Nutritionist
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
         # Check if invitation exists and user owns it
-        invitation = PatientInvitation.get_by_id(invitation_id)
+        invitation = PatientInvitation.query.filter_by(
+            id=invitation_id,
+            nutritionist_id=nutritionist.id
+        ).first()
+        
         if not invitation:
             return error_response('Invitation not found', 404)
         
-        user_uid = request.user.get('uid')
-        if invitation['invited_by_uid'] != user_uid:
-            return error_response('Access denied', 403)
-        
         # Cancel invitation
-        success = PatientInvitation.cancel_invitation(invitation_id)
-        
-        if not success:
-            return error_response('Error canceling invitation', 500)
+        invitation.status = 'expired'
+        from ..services.database_service import db
+        db.session.commit()
         
         return success_response(message='Invitation canceled successfully')
         
@@ -154,9 +188,16 @@ def cancel_invitation(invitation_id):
 def get_invitation_stats():
     """Get invitation statistics for the current user."""
     try:
-        user_uid = request.user.get('uid')
+        user_uid = get_current_user_uid()
         
-        invitations = PatientInvitation.get_all_by_user(user_uid)
+        # Get nutritionist first
+        from ..models.sql_models import Nutritionist
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        invitations = PatientInvitation.query.filter_by(nutritionist_id=nutritionist.id).all()
+        invitations = [inv.to_dict() for inv in invitations]
         
         stats = {
             'total': len(invitations),

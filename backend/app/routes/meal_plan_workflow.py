@@ -4,7 +4,7 @@ Handles the dynamic link routing and workflow management.
 """
 from flask import Blueprint, request, jsonify, send_file
 from io import BytesIO
-from ..middleware.auth import require_auth
+from ..utils.auth_utils import require_auth, get_current_user_uid
 from ..utils.responses import success_response, error_response
 from ..services.meal_plan_workflow_service import MealPlanWorkflowService
 
@@ -18,7 +18,7 @@ def create_workflow_invitation():
     """Create a new meal plan workflow invitation."""
     try:
         data = request.get_json()
-        user = request.user
+        user_uid = get_current_user_uid()
         
         # Validate required fields
         if not data.get('email'):
@@ -29,7 +29,7 @@ def create_workflow_invitation():
         success, result, error = MealPlanWorkflowService.create_workflow_invitation(
             email=data['email'],
             patient_name=data['patient_name'],
-            invited_by_uid=user['uid']
+            invited_by_uid=user_uid
         )
         
         if success:
@@ -45,9 +45,9 @@ def create_workflow_invitation():
 def get_nutritionist_dashboard():
     """Get dashboard data for nutritionist."""
     try:
-        user = request.user
+        user_uid = get_current_user_uid()
         
-        success, dashboard_data, error = MealPlanWorkflowService.get_nutritionist_dashboard_data(user['uid'])
+        success, dashboard_data, error = MealPlanWorkflowService.get_nutritionist_dashboard_data(user_uid)
         
         if success:
             return success_response(dashboard_data, "Dashboard data retrieved successfully")
@@ -63,12 +63,12 @@ def approve_meal_plan():
     """Approve meal plan for a patient."""
     try:
         data = request.get_json() or {}
-        user = request.user
+        user_uid = get_current_user_uid()
         invitation_id = request.view_args['invitation_id']
         
         success, result, error = MealPlanWorkflowService.approve_meal_plan(
             invitation_id=invitation_id,
-            approved_by_uid=user['uid'],
+            approved_by_uid=user_uid,
             meal_plan_data=data
         )
         

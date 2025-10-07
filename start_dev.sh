@@ -36,11 +36,11 @@ sleep 2
 # Validar enums antes de iniciar
 echo "🔍 Validando configuración de base de datos..."
 cd backend
-if ./venv/bin/python quick_enum_fix.py > /dev/null 2>&1; then
+if ./venv/bin/python scripts/quick_enum_fix.py > /dev/null 2>&1; then
     echo "✅ Base de datos validada"
 else
     echo "⚠️  Ejecutando corrección automática de enums..."
-    ./venv/bin/python quick_enum_fix.py
+    ./venv/bin/python scripts/quick_enum_fix.py
 fi
 cd ..
 

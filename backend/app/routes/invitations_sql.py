@@ -14,13 +14,24 @@ invitations_bp = Blueprint('invitations', __name__, url_prefix='/api/invitations
 @invitations_bp.route('', methods=['GET'])
 @require_auth
 def get_invitations():
-    """Get all patient invitations."""
+    """Get all patient invitations for the current nutritionist."""
     try:
+        from ..utils.auth_utils import get_current_user_uid
+        from ..models.sql_models import Nutritionist
+        
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 20, type=int), 100)
         status = request.args.get('status')
         
-        query = PatientInvitation.query
+        # Filter by nutritionist_id to only show invitations belonging to this nutritionist
+        query = PatientInvitation.query.filter_by(nutritionist_id=nutritionist.id)
         
         if status:
             query = query.filter(PatientInvitation.status == status)
@@ -56,12 +67,20 @@ def get_invitations():
 @invitations_bp.route('/stats', methods=['GET'])
 @require_auth
 def get_invitation_stats():
-    """Get invitation statistics."""
+    """Get invitation statistics for the current nutritionist."""
     try:
-        user = request.user
+        from ..utils.auth_utils import get_current_user_uid
+        from ..models.sql_models import Nutritionist
         
-        # Get counts for invitations created by this user
-        base_query = PatientInvitation.query.filter_by(invited_by_uid=user['uid'])
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get counts for invitations created by this nutritionist
+        base_query = PatientInvitation.query.filter_by(nutritionist_id=nutritionist.id)
         
         total = base_query.count()
         pending = base_query.filter_by(status='pending').count()
@@ -88,8 +107,16 @@ def get_invitation_stats():
 def create_invitation():
     """Create a new patient invitation."""
     try:
+        from ..utils.auth_utils import get_current_user_uid
+        from ..models.sql_models import Nutritionist
+        
         data = request.get_json()
-        user = request.user
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
         
         # Validate required fields
         required_fields = ['email']
@@ -97,9 +124,10 @@ def create_invitation():
             if not data.get(field):
                 return error_response(f"Missing required field: {field}", 400)
         
-        # Check if invitation already exists for this email
+        # Check if invitation already exists for this email from this nutritionist
         existing = PatientInvitation.query.filter_by(
             email=data['email'], 
+            nutritionist_id=nutritionist.id,
             status='pending'
         ).first()
         
@@ -111,7 +139,8 @@ def create_invitation():
             email=data['email'],
             first_name=data.get('first_name'),
             last_name=data.get('last_name'),
-            invited_by_uid=user['uid']
+            invited_by_uid=user_uid,  # Keep for backward compatibility
+            nutritionist_id=nutritionist.id  # Set the proper nutritionist relationship
         )
         
         db.session.add(invitation)
@@ -133,9 +162,27 @@ def create_invitation():
 @invitations_bp.route('/<int:invitation_id>', methods=['GET'])
 @require_auth
 def get_invitation(invitation_id):
-    """Get a specific invitation."""
+    """Get a specific invitation for the current nutritionist."""
     try:
-        invitation = PatientInvitation.query.get_or_404(invitation_id)
+        from ..utils.auth_utils import get_current_user_uid
+        from ..models.sql_models import Nutritionist
+        
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get invitation and verify ownership
+        invitation = PatientInvitation.query.filter_by(
+            id=invitation_id,
+            nutritionist_id=nutritionist.id
+        ).first()
+        
+        if not invitation:
+            return error_response("Invitation not found", 404)
+        
         return success_response(invitation.to_dict(), "Invitation retrieved successfully")
         
     except Exception as e:
@@ -144,9 +191,27 @@ def get_invitation(invitation_id):
 @invitations_bp.route('/<int:invitation_id>', methods=['PUT'])
 @require_auth
 def update_invitation(invitation_id):
-    """Update an invitation."""
+    """Update an invitation for the current nutritionist."""
     try:
-        invitation = PatientInvitation.query.get_or_404(invitation_id)
+        from ..utils.auth_utils import get_current_user_uid
+        from ..models.sql_models import Nutritionist
+        
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get invitation and verify ownership
+        invitation = PatientInvitation.query.filter_by(
+            id=invitation_id,
+            nutritionist_id=nutritionist.id
+        ).first()
+        
+        if not invitation:
+            return error_response("Invitation not found", 404)
+        
         data = request.get_json()
         
         # Update allowed fields
@@ -171,9 +236,26 @@ def update_invitation(invitation_id):
 @invitations_bp.route('/<int:invitation_id>', methods=['DELETE'])
 @require_auth
 def delete_invitation(invitation_id):
-    """Delete an invitation."""
+    """Delete an invitation for the current nutritionist."""
     try:
-        invitation = PatientInvitation.query.get_or_404(invitation_id)
+        from ..utils.auth_utils import get_current_user_uid
+        from ..models.sql_models import Nutritionist
+        
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get invitation and verify ownership
+        invitation = PatientInvitation.query.filter_by(
+            id=invitation_id,
+            nutritionist_id=nutritionist.id
+        ).first()
+        
+        if not invitation:
+            return error_response("Invitation not found", 404)
         
         # Check if invitation has been completed
         if invitation.status == 'completed':
@@ -217,9 +299,26 @@ def get_invitation_by_token(token):
 @invitations_bp.route('/resend/<int:invitation_id>', methods=['POST'])
 @require_auth
 def resend_invitation(invitation_id):
-    """Resend an invitation (extend expiry)."""
+    """Resend an invitation (extend expiry) for the current nutritionist."""
     try:
-        invitation = PatientInvitation.query.get_or_404(invitation_id)
+        from ..utils.auth_utils import get_current_user_uid
+        from ..models.sql_models import Nutritionist
+        
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get invitation and verify ownership
+        invitation = PatientInvitation.query.filter_by(
+            id=invitation_id,
+            nutritionist_id=nutritionist.id
+        ).first()
+        
+        if not invitation:
+            return error_response("Invitation not found", 404)
         
         if invitation.status == 'completed':
             return error_response("Cannot resend completed invitation", 400)
@@ -248,15 +347,27 @@ def resend_invitation(invitation_id):
 def regenerate_invitation_link(invitation_id):
     """Regenerate invitation token and link."""
     try:
-        invitation = PatientInvitation.query.get_or_404(invitation_id)
+        from ..utils.auth_utils import get_current_user_uid
+        from ..models.sql_models import Nutritionist
+        
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get invitation and verify ownership
+        invitation = PatientInvitation.query.filter_by(
+            id=invitation_id,
+            nutritionist_id=nutritionist.id
+        ).first()
+        
+        if not invitation:
+            return error_response("Invitation not found", 404)
         
         if invitation.status == 'completed':
             return error_response("Cannot regenerate completed invitation", 400)
-        
-        # Check if the user owns this invitation
-        user = request.user
-        if invitation.invited_by_uid != user['uid']:
-            return error_response("Access denied", 403)
         
         # Regenerate token and extend expiry
         invitation.regenerate_token()

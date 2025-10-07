@@ -19,9 +19,16 @@ class MealPlanWorkflowService:
     def create_workflow_invitation(email: str, patient_name: str, invited_by_uid: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
         """Create a new workflow invitation for the meal plan process."""
         try:
-            # Check if there's already a pending invitation for this email
+            # First get the nutritionist entity
+            from ..models.sql_models import Nutritionist
+            nutritionist = Nutritionist.query.filter_by(firebase_uid=invited_by_uid).first()
+            if not nutritionist:
+                return False, None, "Nutritionist not found"
+            
+            # Check if there's already a pending invitation for this email from this nutritionist
             existing = PatientInvitation.query.filter_by(
-                email=email, 
+                email=email,
+                nutritionist_id=nutritionist.id,
                 status='pending'
             ).first()
             
@@ -44,7 +51,8 @@ class MealPlanWorkflowService:
                 email=email,
                 first_name=first_name,
                 last_name=last_name,
-                invited_by_uid=invited_by_uid,
+                invited_by_uid=invited_by_uid,  # Keep for backward compatibility
+                nutritionist_id=nutritionist.id,  # New FK relationship
                 status='pending'  # This will control the dynamic link behavior
             )
             
@@ -220,14 +228,20 @@ class MealPlanWorkflowService:
                 start_date = date.today() + timedelta(days=1)
                 end_date = start_date + timedelta(days=6)
                 
+                # Get nutritionist ID from the invitation
+                nutritionist_id = invitation.nutritionist_id
+                
                 meal_plan = MealPlan(
                     patient_id=patient.id,
+                    nutritionist_id=nutritionist_id,  # Set nutritionist_id properly
                     plan_name=f"Plan Semanal - {patient.first_name} {patient.last_name}",
                     start_date=start_date,
                     end_date=end_date,
                     status='draft',
                     notes=meal_plan_data.get('notes', 'Plan personalizado creado por nutricionista'),
-                    generated_by_uid=approved_by_uid
+                    generated_by_uid=approved_by_uid,  # Keep for backward compatibility
+                    version=1,
+                    is_latest=True
                 )
                 db.session.add(meal_plan)
                 db.session.flush()
@@ -265,10 +279,16 @@ class MealPlanWorkflowService:
     def get_nutritionist_dashboard_data(nutritionist_uid: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
         """Get dashboard data for nutritionist."""
         try:
+            # First get the nutritionist entity
+            from ..models.sql_models import Nutritionist
+            nutritionist = Nutritionist.query.filter_by(firebase_uid=nutritionist_uid).first()
+            if not nutritionist:
+                return False, None, "Nutritionist not found"
+            
             # Get invitations where patients have submitted forms (completed status)
             # and don't have approved meal plans yet
             completed_invitations = PatientInvitation.query.filter_by(
-                invited_by_uid=nutritionist_uid,
+                nutritionist_id=nutritionist.id,
                 status='completed'
             ).all()
             
@@ -290,13 +310,13 @@ class MealPlanWorkflowService:
                 .join(Patient, MealPlan.patient_id == Patient.id)\
                 .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
                 .filter(
-                    PatientInvitation.invited_by_uid == nutritionist_uid,
+                    PatientInvitation.nutritionist_id == nutritionist.id,
                     MealPlan.status == 'approved'
                 ).all()
             
             # Get pending invitations
             pending_invitations = PatientInvitation.query.filter_by(
-                invited_by_uid=nutritionist_uid,
+                nutritionist_id=nutritionist.id,
                 status='pending'
             ).all()
             

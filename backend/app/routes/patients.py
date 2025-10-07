@@ -1,105 +1,150 @@
 from flask import Blueprint, request, jsonify
 from ..middleware.auth import require_auth
-from ..models.patient import Patient
+from ..models.sql_models import Patient, PatientInvitation, Nutritionist
 from ..utils.responses import success_response, error_response
+from ..utils.auth_utils import get_current_user_uid
+from ..services.database_service import db
 
 patients_bp = Blueprint('patients', __name__, url_prefix='/api/patients')
 
 @patients_bp.route('/', methods=['GET'])
 @require_auth
 def list_patients():
-    """Get all patients with optional filters."""
+    """Get all patients for the current nutritionist with optional filters."""
     try:
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
         # Get query parameters
         profile_status = request.args.get('profile_status')  # pending_review, approved
         is_active = request.args.get('is_active', 'true').lower() == 'true'
         search = request.args.get('search')  # Search by name or email
         
-        # Build filters
-        filters = {'is_active': is_active}
-        if profile_status:
-            filters['profile_status'] = profile_status
+        # Build query to get patients for this nutritionist
+        query = db.session.query(Patient)\
+            .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
+            .filter(PatientInvitation.nutritionist_id == nutritionist.id)
         
-        patients = Patient.get_all(filters)
+        # Apply filters
+        if is_active is not None:
+            query = query.filter(Patient.is_active == is_active)
+        
+        if profile_status:
+            query = query.filter(Patient.profile_status == profile_status)
         
         # Apply search filter if provided
         if search:
             search_lower = search.lower()
-            patients = [
-                p for p in patients 
-                if (search_lower in p.get('first_name', '').lower() or 
-                    search_lower in p.get('last_name', '').lower() or
-                    search_lower in p.get('email', '').lower())
-            ]
+            query = query.filter(
+                db.or_(
+                    Patient.first_name.ilike(f'%{search_lower}%'),
+                    Patient.last_name.ilike(f'%{search_lower}%'),
+                    Patient.email.ilike(f'%{search_lower}%')
+                )
+            )
         
-        # Add summary data
+        patients = query.all()
+        
+        # Convert to dictionaries with relation data
+        patients_data = []
         for patient in patients:
-            # Count conditions, intolerances, preferences
-            patient_details = Patient.get_with_conditions_and_preferences(patient['id'])
-            if patient_details:
-                patient['conditions_count'] = len(patient_details.get('medical_conditions', []))
-                patient['intolerances_count'] = len(patient_details.get('intolerances', []))
-                patient['preferences_count'] = len(patient_details.get('dietary_preferences', []))
+            patient_dict = patient.to_dict(include_relations=True)
+            patients_data.append(patient_dict)
         
         return success_response({
-            'patients': patients,
-            'total': len(patients)
+            'patients': patients_data,
+            'total': len(patients_data)
         })
         
     except Exception as e:
         return error_response(f'Error retrieving patients: {str(e)}', 500)
 
-@patients_bp.route('/<patient_id>', methods=['GET'])
+@patients_bp.route('/<int:patient_id>', methods=['GET'])
 @require_auth
 def get_patient(patient_id):
     """Get patient details with conditions and preferences."""
     try:
-        patient = Patient.get_with_conditions_and_preferences(patient_id)
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get patient and verify ownership
+        patient = db.session.query(Patient)\
+            .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
+            .filter(
+                Patient.id == patient_id,
+                PatientInvitation.nutritionist_id == nutritionist.id
+            ).first()
         
         if not patient:
             return error_response('Patient not found', 404)
         
-        return success_response({'patient': patient})
+        return success_response({'patient': patient.to_dict(include_relations=True)})
         
     except Exception as e:
         return error_response(f'Error retrieving patient: {str(e)}', 500)
 
-@patients_bp.route('/<patient_id>', methods=['PUT'])
+@patients_bp.route('/<int:patient_id>', methods=['PUT'])
 @require_auth
 def update_patient(patient_id):
     """Update patient information."""
     try:
+        user_uid = get_current_user_uid()
         data = request.get_json()
         
         if not data:
             return error_response('Update data is required', 400)
         
-        # Check if patient exists
-        patient = Patient.get_by_id(patient_id)
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get patient and verify ownership
+        patient = db.session.query(Patient)\
+            .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
+            .filter(
+                Patient.id == patient_id,
+                PatientInvitation.nutritionist_id == nutritionist.id
+            ).first()
+        
         if not patient:
             return error_response('Patient not found', 404)
         
-        # Update patient
-        success = Patient.update(patient_id, data)
+        # Update allowed fields
+        allowed_fields = ['first_name', 'last_name', 'date_of_birth', 'gender', 
+                         'email', 'phone', 'additional_notes', 'profile_status']
         
-        if not success:
-            return error_response('Error updating patient', 500)
+        for field in allowed_fields:
+            if field in data:
+                setattr(patient, field, data[field])
         
-        # Get updated patient
-        updated_patient = Patient.get_with_conditions_and_preferences(patient_id)
+        # Update timestamp
+        patient.updated_at = db.func.now()
+        
+        db.session.commit()
         
         return success_response({
-            'patient': updated_patient
+            'patient': patient.to_dict(include_relations=True)
         }, 'Patient updated successfully')
         
     except Exception as e:
+        db.session.rollback()
         return error_response(f'Error updating patient: {str(e)}', 500)
 
-@patients_bp.route('/<patient_id>/status', methods=['PUT'])
+@patients_bp.route('/<int:patient_id>/status', methods=['PUT'])
 @require_auth
 def update_patient_status(patient_id):
     """Update patient profile status (approve/reject)."""
     try:
+        user_uid = get_current_user_uid()
         data = request.get_json()
         
         if not data or 'status' not in data:
@@ -109,107 +154,180 @@ def update_patient_status(patient_id):
         if status not in ['pending_review', 'approved']:
             return error_response('Invalid status value', 400)
         
-        # Check if patient exists
-        patient = Patient.get_by_id(patient_id)
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get patient and verify ownership
+        patient = db.session.query(Patient)\
+            .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
+            .filter(
+                Patient.id == patient_id,
+                PatientInvitation.nutritionist_id == nutritionist.id
+            ).first()
+        
         if not patient:
             return error_response('Patient not found', 404)
         
         # Update status
-        update_data = {'profile_status': status}
-        if status == 'approved':
-            update_data['approved_at'] = request.user.get('uid')  # Store who approved
+        patient.profile_status = status
+        patient.updated_at = db.func.now()
         
-        success = Patient.update(patient_id, update_data)
-        
-        if not success:
-            return error_response('Error updating patient status', 500)
+        db.session.commit()
         
         return success_response(message=f'Patient status updated to {status}')
         
     except Exception as e:
+        db.session.rollback()
         return error_response(f'Error updating patient status: {str(e)}', 500)
 
-@patients_bp.route('/<patient_id>', methods=['DELETE'])
+@patients_bp.route('/<int:patient_id>', methods=['DELETE'])
 @require_auth
 def delete_patient(patient_id):
     """Soft delete patient (set is_active to False)."""
     try:
-        # Check if patient exists
-        patient = Patient.get_by_id(patient_id)
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get patient and verify ownership
+        patient = db.session.query(Patient)\
+            .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
+            .filter(
+                Patient.id == patient_id,
+                PatientInvitation.nutritionist_id == nutritionist.id
+            ).first()
+        
         if not patient:
             return error_response('Patient not found', 404)
         
         # Soft delete
-        success = Patient.delete(patient_id)
+        patient.is_active = False
+        patient.updated_at = db.func.now()
         
-        if not success:
-            return error_response('Error deleting patient', 500)
+        db.session.commit()
         
         return success_response(message='Patient deleted successfully')
         
     except Exception as e:
+        db.session.rollback()
         return error_response(f'Error deleting patient: {str(e)}', 500)
 
-@patients_bp.route('/<patient_id>/conditions', methods=['POST'])
+@patients_bp.route('/<int:patient_id>/conditions', methods=['POST'])
 @require_auth
 def add_patient_condition(patient_id):
     """Add medical condition to patient."""
     try:
+        user_uid = get_current_user_uid()
         data = request.get_json()
         
         if not data or not data.get('condition_id'):
             return error_response('Condition ID is required', 400)
         
-        # Check if patient exists
-        patient = Patient.get_by_id(patient_id)
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get patient and verify ownership
+        patient = db.session.query(Patient)\
+            .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
+            .filter(
+                Patient.id == patient_id,
+                PatientInvitation.nutritionist_id == nutritionist.id
+            ).first()
+        
         if not patient:
             return error_response('Patient not found', 404)
         
-        # Add condition to subcollection
-        from ..services.firebase_service import FirebaseService
-        from datetime import datetime
+        # Add condition using SQL model
+        from ..models.sql_models import PatientMedicalCondition
         
-        db = FirebaseService.get_firestore()
-        db.collection(f'patients/{patient_id}/medical_conditions').add({
-            'condition_id': data['condition_id'],
-            'condition_name': data.get('condition_name', ''),
-            'notes': data.get('notes', ''),
-            'added_at': datetime.utcnow()
-        })
+        condition = PatientMedicalCondition(
+            patient_id=patient_id,
+            condition_id=data['condition_id'],
+            notes=data.get('notes', '')
+        )
+        
+        db.session.add(condition)
+        db.session.commit()
         
         return success_response(message='Condition added successfully')
         
     except Exception as e:
+        db.session.rollback()
         return error_response(f'Error adding condition: {str(e)}', 500)
 
-@patients_bp.route('/<patient_id>/conditions/<condition_doc_id>', methods=['DELETE'])
+@patients_bp.route('/<int:patient_id>/conditions/<int:condition_id>', methods=['DELETE'])
 @require_auth
-def remove_patient_condition(patient_id, condition_doc_id):
+def remove_patient_condition(patient_id, condition_id):
     """Remove medical condition from patient."""
     try:
-        from ..services.firebase_service import FirebaseService
+        user_uid = get_current_user_uid()
         
-        db = FirebaseService.get_firestore()
-        db.collection(f'patients/{patient_id}/medical_conditions').document(condition_doc_id).delete()
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get patient and verify ownership
+        patient = db.session.query(Patient)\
+            .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
+            .filter(
+                Patient.id == patient_id,
+                PatientInvitation.nutritionist_id == nutritionist.id
+            ).first()
+        
+        if not patient:
+            return error_response('Patient not found', 404)
+        
+        # Remove condition using SQL model
+        from ..models.sql_models import PatientMedicalCondition
+        
+        condition = PatientMedicalCondition.query.filter_by(
+            patient_id=patient_id,
+            id=condition_id
+        ).first()
+        
+        if not condition:
+            return error_response('Condition not found', 404)
+        
+        db.session.delete(condition)
+        db.session.commit()
         
         return success_response(message='Condition removed successfully')
         
     except Exception as e:
+        db.session.rollback()
         return error_response(f'Error removing condition: {str(e)}', 500)
 
 @patients_bp.route('/stats', methods=['GET'])
 @require_auth
 def get_patients_stats():
-    """Get patient statistics."""
+    """Get patient statistics for the current nutritionist."""
     try:
-        all_patients = Patient.get_all()
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get all patients for this nutritionist
+        patients = db.session.query(Patient)\
+            .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
+            .filter(PatientInvitation.nutritionist_id == nutritionist.id).all()
         
         stats = {
-            'total': len(all_patients),
-            'active': len([p for p in all_patients if p.get('is_active', True)]),
-            'pending_review': len([p for p in all_patients if p.get('profile_status') == 'pending_review']),
-            'approved': len([p for p in all_patients if p.get('profile_status') == 'approved']),
-            'inactive': len([p for p in all_patients if not p.get('is_active', True)])
+            'total': len(patients),
+            'active': len([p for p in patients if p.is_active]),
+            'pending_review': len([p for p in patients if p.profile_status == 'pending_review']),
+            'approved': len([p for p in patients if p.profile_status == 'approved']),
+            'inactive': len([p for p in patients if not p.is_active])
         }
         
         return success_response({'stats': stats})

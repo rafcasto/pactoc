@@ -40,8 +40,9 @@ def create_app(config_name=None):
             init_db(app)
         except Exception as e:
             app.logger.error(f"Database initialization failed: {e}")
-            # In production, we might want to continue without DB for health checks
-            if not os.getenv('VERCEL'):
+            # In Vercel/serverless, continue without DB for health checks
+            # The database will be initialized on first actual use
+            if not os.getenv('VERCEL') and not os.getenv('SERVERLESS'):
                 raise
     
     # Register blueprints
@@ -55,6 +56,12 @@ def create_app(config_name=None):
     app.register_blueprint(catalogs_bp)
     app.register_blueprint(meal_plans_bp)
     app.register_blueprint(workflow_bp)
+    
+    # Register new business rules routes
+    from .routes.nutritionist_routes import nutritionist_bp
+    from .routes.patient_meal_plan_routes import patient_meal_plan_bp
+    app.register_blueprint(nutritionist_bp)
+    app.register_blueprint(patient_meal_plan_bp)
     
     # Register public routes (no authentication required)
     from .routes.public import public_bp

@@ -1,9 +1,11 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime, date
 from ..middleware.auth import require_auth
-from ..models.meal_plan import MealPlan
+from ..models.sql_models import MealPlan, Patient, PatientInvitation, Nutritionist
 from ..services.meal_plan_service import MealPlanService
 from ..utils.responses import success_response, error_response
+from ..utils.auth_utils import get_current_user_uid
+from ..services.database_service import db
 
 meal_plans_bp = Blueprint('meal_plans', __name__, url_prefix='/api/meal-plans')
 
@@ -59,47 +61,75 @@ def generate_meal_plan():
 @meal_plans_bp.route('/', methods=['GET'])
 @require_auth
 def list_meal_plans():
-    """Get all meal plans with optional filters."""
+    """Get all meal plans for the current nutritionist with optional filters."""
     try:
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
         # Get query parameters
         patient_id = request.args.get('patient_id')
         status = request.args.get('status')  # draft, approved, sent
-        generated_by = request.args.get('generated_by')
         
-        # Build filters
-        filters = {}
+        # Build query to get meal plans for this nutritionist only
+        query = MealPlan.query.filter_by(nutritionist_id=nutritionist.id)
+        
+        # Apply filters
         if patient_id:
-            filters['patient_id'] = patient_id
-        if status:
-            filters['status'] = status
-        if generated_by:
-            filters['generated_by_uid'] = generated_by
+            # Verify the patient belongs to this nutritionist
+            patient = db.session.query(Patient)\
+                .join(PatientInvitation, Patient.invitation_id == PatientInvitation.id)\
+                .filter(
+                    Patient.id == patient_id,
+                    PatientInvitation.nutritionist_id == nutritionist.id
+                ).first()
+            
+            if not patient:
+                return error_response('Patient not found or access denied', 404)
+            
+            query = query.filter(MealPlan.patient_id == patient_id)
         
-        meal_plans = MealPlan.get_all(filters)
+        if status:
+            query = query.filter(MealPlan.status == status)
+        
+        meal_plans = query.all()
+        meal_plans_data = [mp.to_dict(include_relations=True) for mp in meal_plans]
         
         return success_response({
-            'meal_plans': meal_plans,
-            'total': len(meal_plans)
+            'meal_plans': meal_plans_data,
+            'total': len(meal_plans_data)
         })
         
     except Exception as e:
         return error_response(f'Error retrieving meal plans: {str(e)}', 500)
 
-@meal_plans_bp.route('/<plan_id>', methods=['GET'])
+@meal_plans_bp.route('/<int:plan_id>', methods=['GET'])
 @require_auth
 def get_meal_plan(plan_id):
-    """Get meal plan details with meals."""
+    """Get meal plan details with meals for the current nutritionist."""
     try:
-        meal_plan = MealPlan.get_by_id(plan_id)
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get meal plan and verify ownership
+        meal_plan = MealPlan.query.filter_by(
+            id=plan_id,
+            nutritionist_id=nutritionist.id
+        ).first()
         
         if not meal_plan:
             return error_response('Meal plan not found', 404)
         
-        # Get calendar view
-        calendar = MealPlan.get_weekly_calendar(plan_id)
-        meal_plan['calendar'] = calendar
+        meal_plan_data = meal_plan.to_dict(include_relations=True)
         
-        return success_response({'meal_plan': meal_plan})
+        return success_response({'meal_plan': meal_plan_data})
         
     except Exception as e:
         return error_response(f'Error retrieving meal plan: {str(e)}', 500)
@@ -249,21 +279,24 @@ def duplicate_meal_plan(plan_id):
 @meal_plans_bp.route('/stats', methods=['GET'])
 @require_auth
 def get_meal_plan_stats():
-    """Get meal plan statistics."""
+    """Get meal plan statistics for the current nutritionist."""
     try:
-        all_plans = MealPlan.get_all()
+        user_uid = get_current_user_uid()
+        
+        # Get nutritionist first
+        nutritionist = Nutritionist.query.filter_by(firebase_uid=user_uid).first()
+        if not nutritionist:
+            return error_response('Nutritionist not found', 404)
+        
+        # Get all meal plans for this nutritionist
+        all_plans = MealPlan.query.filter_by(nutritionist_id=nutritionist.id).all()
         
         stats = {
             'total': len(all_plans),
-            'draft': len([p for p in all_plans if p.get('status') == 'draft']),
-            'approved': len([p for p in all_plans if p.get('status') == 'approved']),
-            'sent': len([p for p in all_plans if p.get('status') == 'sent'])
+            'draft': len([p for p in all_plans if p.status == 'draft']),
+            'approved': len([p for p in all_plans if p.status == 'approved']),
+            'active': len([p for p in all_plans if p.status == 'approved' and p.is_latest])
         }
-        
-        # Plans by current user
-        user_uid = request.user.get('uid')
-        user_plans = [p for p in all_plans if p.get('generated_by_uid') == user_uid]
-        stats['created_by_me'] = len(user_plans)
         
         return success_response({'stats': stats})
         

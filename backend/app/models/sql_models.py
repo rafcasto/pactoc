@@ -16,6 +16,55 @@ class BaseModel(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+# Nutritionists
+class Nutritionist(BaseModel):
+    __tablename__ = 'nutritionists'
+    
+    firebase_uid = Column(String(255), unique=True, nullable=False)
+    email = Column(String(255), unique=True, nullable=False)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    phone = Column(String(20))
+    license_number = Column(String(100))
+    specialization = Column(String(200))
+    bio = Column(Text)
+    profile_image_url = Column(String(500))
+    is_active = Column(Boolean, default=True)
+    is_verified = Column(Boolean, default=False)
+    verification_date = Column(DateTime)
+    
+    # Relationships
+    invitations = relationship("PatientInvitation", back_populates="nutritionist", cascade="all, delete-orphan")
+    meal_plans = relationship("MealPlan", back_populates="nutritionist", cascade="all, delete-orphan")
+    
+    def to_dict(self, include_relations=False):
+        data = {
+            'id': self.id,
+            'firebase_uid': self.firebase_uid,
+            'email': self.email,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'phone': self.phone,
+            'license_number': self.license_number,
+            'specialization': self.specialization,
+            'bio': self.bio,
+            'profile_image_url': self.profile_image_url,
+            'is_active': self.is_active,
+            'is_verified': self.is_verified,
+            'verification_date': self.verification_date.isoformat() if self.verification_date else None,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }
+        
+        if include_relations:
+            data.update({
+                'total_patients': len([inv for inv in self.invitations if inv.patient]),
+                'active_meal_plans': len([mp for mp in self.meal_plans if mp.status == 'approved' and mp.is_latest]),
+                'total_invitations': len(self.invitations)
+            })
+        
+        return data
+
 # Patient Invitations
 class PatientInvitation(BaseModel):
     __tablename__ = 'patient_invitations'
@@ -24,10 +73,14 @@ class PatientInvitation(BaseModel):
     email = Column(String(255), nullable=False)
     first_name = Column(String(100))
     last_name = Column(String(100))
-    invited_by_uid = Column(String(255), nullable=False)  # Firebase UID
+    invited_by_uid = Column(String(255), nullable=False)  # Firebase UID - kept for backward compatibility
+    nutritionist_id = Column(Integer, ForeignKey('nutritionists.id'))  # New FK relationship
     status = Column(Enum('pending', 'completed', 'expired', name='invitation_status'), default='pending')
     expires_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime)
+    
+    # Relationships
+    nutritionist = relationship("Nutritionist", back_populates="invitations")
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -382,23 +435,34 @@ class MealPlan(BaseModel):
     __tablename__ = 'meal_plans'
     
     patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False)
+    nutritionist_id = Column(Integer, ForeignKey('nutritionists.id'))  # New FK relationship
     plan_name = Column(String(200))
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     status = Column(Enum('draft', 'approved', 'sent', name='meal_plan_status'), default='draft')
     notes = Column(Text)
-    generated_by_uid = Column(String(255), nullable=False)  # Firebase UID
+    generated_by_uid = Column(String(255), nullable=False)  # Firebase UID - kept for backward compatibility
     approved_by_uid = Column(String(255))  # Firebase UID
     approved_at = Column(DateTime)
     
+    # Versioning fields
+    version = Column(Integer, default=1)
+    is_latest = Column(Boolean, default=True)
+    parent_plan_id = Column(Integer, ForeignKey('meal_plans.id'))  # Self-referencing FK for versioning
+    
     # Relationships
     patient = relationship("Patient", back_populates="meal_plans")
+    nutritionist = relationship("Nutritionist", back_populates="meal_plans")
     meals = relationship("MealPlanMeal", back_populates="meal_plan", cascade="all, delete-orphan")
+    
+    # Self-referencing relationship for versioning
+    parent_plan = relationship("MealPlan", remote_side="MealPlan.id", backref="versions")
     
     def to_dict(self, include_relations=False):
         data = {
             'id': self.id,
             'patient_id': self.patient_id,
+            'nutritionist_id': self.nutritionist_id,
             'plan_name': self.plan_name,
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
@@ -407,14 +471,98 @@ class MealPlan(BaseModel):
             'generated_by_uid': self.generated_by_uid,
             'approved_by_uid': self.approved_by_uid,
             'approved_at': self.approved_at.isoformat() if self.approved_at else None,
+            'version': self.version,
+            'is_latest': self.is_latest,
+            'parent_plan_id': self.parent_plan_id,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()
         }
         
         if include_relations:
             data['meals'] = [meal.to_dict() for meal in self.meals]
+            if self.nutritionist:
+                data['nutritionist'] = {
+                    'name': f"{self.nutritionist.first_name} {self.nutritionist.last_name}",
+                    'email': self.nutritionist.email,
+                    'specialization': self.nutritionist.specialization
+                }
+            if self.parent_plan:
+                data['parent_plan'] = {
+                    'id': self.parent_plan.id,
+                    'version': self.parent_plan.version,
+                    'plan_name': self.parent_plan.plan_name
+                }
+            # Include version history count
+            data['total_versions'] = len(self.versions) + 1  # +1 for current version
         
         return data
+    
+    @staticmethod
+    def get_latest_for_patient(patient_id: int):
+        """Get the latest meal plan version for a patient."""
+        from app.services.database_service import db
+        return db.session.query(MealPlan).filter_by(
+            patient_id=patient_id, 
+            is_latest=True, 
+            status='approved'
+        ).first()
+    
+    @staticmethod
+    def get_all_versions_for_patient(patient_id: int):
+        """Get all meal plan versions for a patient, ordered by version desc."""
+        from app.services.database_service import db
+        return db.session.query(MealPlan).filter_by(
+            patient_id=patient_id
+        ).order_by(MealPlan.version.desc()).all()
+    
+    def create_new_version(self, nutritionist_id: int, plan_name: str = None, notes: str = None):
+        """Create a new version of this meal plan."""
+        from app.services.database_service import db
+        
+        # Get the latest version number for this patient
+        latest = db.session.query(MealPlan).filter_by(
+            patient_id=self.patient_id
+        ).order_by(MealPlan.version.desc()).first()
+        
+        new_version = latest.version + 1 if latest else 1
+        
+        # Mark all previous versions as not latest
+        db.session.query(MealPlan).filter_by(
+            patient_id=self.patient_id
+        ).update({'is_latest': False})
+        
+        # Create new version
+        new_plan = MealPlan(
+            patient_id=self.patient_id,
+            nutritionist_id=nutritionist_id,
+            plan_name=plan_name or f"{self.plan_name} (v{new_version})",
+            start_date=self.start_date,
+            end_date=self.end_date,
+            status='draft',
+            notes=notes or f"Version {new_version} - Updated from version {self.version}",
+            generated_by_uid=self.generated_by_uid,
+            version=new_version,
+            is_latest=True,
+            parent_plan_id=self.id
+        )
+        
+        db.session.add(new_plan)
+        db.session.flush()  # Get the ID
+        
+        # Copy meals from original plan
+        for meal in self.meals:
+            new_meal = MealPlanMeal(
+                plan_id=new_plan.id,
+                recipe_id=meal.recipe_id,
+                day_of_week=meal.day_of_week,
+                meal_type=meal.meal_type,
+                scheduled_time=meal.scheduled_time,
+                servings=meal.servings
+            )
+            db.session.add(new_meal)
+        
+        db.session.commit()
+        return new_plan
 
 # Meal Plan Tokens
 class MealPlanToken(BaseModel):
