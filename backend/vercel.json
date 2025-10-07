@@ -3,14 +3,10 @@
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python@3.9.16"
+      "use": "@vercel/python"
     }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "api/index.py"
-    },
     {
       "src": "/(.*)",
       "dest": "api/index.py"
@@ -18,15 +14,11 @@
   ],
   "env": {
     "FLASK_ENV": "production",
-    "VERCEL": "1",
-    "PYTHONPATH": "$PYTHONPATH:/var/task"
+    "VERCEL": "1"
   },
   "functions": {
     "api/index.py": {
-      "maxDuration": 30,
-      "memory": 1024
+      "maxDuration": 30
     }
-  },
-  "installCommand": "pip install -r requirements.txt",
-  "buildCommand": "echo 'Build completed'"
+  }
 }
